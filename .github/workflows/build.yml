@@ -1,0 +1,37 @@
+name: Build and Release DataSense
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install PyQt6 pandas numpy matplotlib seaborn scikit-learn pyinstaller qt-material openpyxl
+
+      - name: Build EXE
+        run: |
+          pyinstaller --noconfirm --onefile --windowed --name DataSense --add-data "ui;ui" --add-data "core;core" main.py
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/DataSense.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
