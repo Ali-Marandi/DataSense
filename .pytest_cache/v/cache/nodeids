@@ -1,0 +1,8 @@
+[
+  "tests/test_data_manager.py::test_export_roundtrip",
+  "tests/test_data_manager.py::test_fill_and_history",
+  "tests/test_data_manager.py::test_load_and_profile",
+  "tests/test_data_manager.py::test_machine_learning",
+  "tests/test_data_manager.py::test_statistics",
+  "tests/test_data_manager.py::test_transformations"
+]

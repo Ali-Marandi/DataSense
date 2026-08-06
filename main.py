@@ -1,19 +1,35 @@
-import sys
-from PyQt6.QtWidgets import QApplication
-from ui.main_window import MainWindow
-from qt_material import apply_stylesheet
+"""DataSense application entry point."""
+from __future__ import annotations
 
-def main():
+import os
+import sys
+
+os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
+
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import QApplication
+
+from core.version import APP_NAME, APP_PUBLISHER, APP_VERSION
+from ui.main_window import MainWindow
+
+
+def resource_path(*parts: str) -> str:
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, *parts)
+
+
+def main() -> int:
     app = QApplication(sys.argv)
-    
-    # Create main window
+    app.setApplicationName(APP_NAME)
+    app.setApplicationVersion(APP_VERSION)
+    app.setOrganizationName(APP_PUBLISHER)
+    icon = resource_path("assets", "icon.ico")
+    if os.path.exists(icon):
+        app.setWindowIcon(QIcon(icon))
     window = MainWindow()
-    
-    # Apply a modern dark theme
-    apply_stylesheet(app, theme='dark_teal.xml')
-    
     window.show()
-    sys.exit(app.exec())
+    return app.exec()
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
