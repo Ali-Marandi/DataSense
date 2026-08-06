@@ -7,3 +7,8 @@ scikit-learn
 pyinstaller
 qt-material
 openpyxl
+sqlalchemy
+mysql-connector-python
+psycopg2-binary
+fpdf2
+pyyaml

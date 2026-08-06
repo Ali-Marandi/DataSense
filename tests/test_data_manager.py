@@ -39,5 +39,13 @@ class TestDataManager(unittest.TestCase):
         summary = self.manager.get_summary()
         self.assertIsNotNone(summary)
 
+    def test_clean_data(self):
+        self.manager.load_data(self.test_file)
+        # Add a duplicate
+        self.manager.df = pd.concat([self.manager.df, self.manager.df.iloc[[0]]])
+        success, _ = self.manager.clean_data(drop_duplicates=True)
+        self.assertTrue(success)
+        self.assertEqual(len(self.manager.df), 3)
+
 if __name__ == "__main__":
     unittest.main()

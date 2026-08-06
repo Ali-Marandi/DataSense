@@ -6,6 +6,10 @@ from PyQt6.QtCore import Qt
 from core.data_manager import DataManager
 from ui.visualization_tab import VisualizationTab
 from ui.analysis_tab import AnalysisTab
+from ui.db_tab import DBTab
+from ui.cleaning_tab import CleaningTab
+from ui.automl_tab import AutoMLTab
+from ui.report_tab import ReportTab
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -42,6 +46,22 @@ class MainWindow(QMainWindow):
         self.data_layout.addWidget(self.table)
         
         self.tabs.addTab(self.data_tab, "Data Management")
+
+        # SQL DB Tab
+        self.db_tab = DBTab(self.data_manager)
+        self.tabs.addTab(self.db_tab, "SQL Database")
+
+        # Cleaning Tab
+        self.cleaning_tab = CleaningTab(self.data_manager)
+        self.tabs.addTab(self.cleaning_tab, "Smart Cleaning")
+
+        # AutoML Tab
+        self.automl_tab = AutoMLTab(self.data_manager)
+        self.tabs.addTab(self.automl_tab, "AutoML (AI)")
+
+        # Report Tab
+        self.report_tab = ReportTab(self.data_manager)
+        self.tabs.addTab(self.report_tab, "Report Generator")
 
         # Analysis Tab
         self.analysis_tab = AnalysisTab(self.data_manager)

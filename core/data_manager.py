@@ -41,3 +41,25 @@ class DataManager:
         if self.df is not None:
             return self.df.head(rows)
         return None
+
+    def clean_data(self, fill_na=True, drop_duplicates=True):
+        """پاکسازی هوشمند داده‌ها"""
+        if self.df is None:
+            return False, "داده‌ای برای پاکسازی وجود ندارد."
+        
+        try:
+            if drop_duplicates:
+                self.df.drop_duplicates(inplace=True)
+            
+            if fill_na:
+                # پر کردن مقادیر خالی بر اساس نوع داده
+                for col in self.df.columns:
+                    if self.df[col].dtype in ['int64', 'float64']:
+                        self.df[col] = self.df[col].fillna(self.df[col].mean())
+                    else:
+                        val = self.df[col].mode()[0] if not self.df[col].mode().empty else "Unknown"
+                        self.df[col] = self.df[col].fillna(val)
+            
+            return True, "پاکسازی با موفقیت انجام شد."
+        except Exception as e:
+            return False, str(e)

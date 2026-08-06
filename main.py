@@ -9,8 +9,14 @@ def main():
     # Create main window
     window = MainWindow()
     
-    # Apply a modern dark theme
-    apply_stylesheet(app, theme='dark_teal.xml')
+    # Apply a professional dark theme with custom styling
+    extra = {
+        'density_scale': '-1',
+        'danger': '#dc3545',
+        'warning': '#ffc107',
+        'success': '#28a745',
+    }
+    apply_stylesheet(app, theme='dark_teal.xml', extra=extra)
     
     window.show()
     sys.exit(app.exec())
