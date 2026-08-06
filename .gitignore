@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+build/
+dist/
+installer/output/
+*.spec.bak
+.pytest_cache/
+*.dsproj

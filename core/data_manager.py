@@ -1,40 +1,82 @@
-import pandas as pd
+"""Dataset loading, inspection and transformation with undo history."""
+from __future__ import annotations
+
 import os
+import sqlite3
+from dataclasses import dataclass, field
+from typing import Any
 
+import numpy as np
+import pandas as pd
+
+SUPPORTED_IMPORT = {
+    ".csv": "Comma separated values",
+    ".tsv": "Tab separated values",
+    ".txt": "Delimited text",
+    ".xls": "Excel workbook",
+    ".xlsx": "Excel workbook",
+    ".json": "JSON records",
+    ".parquet": "Apache Parquet",
+    ".db": "SQLite database",
+    ".sqlite": "SQLite database",
+}
+
+
+@dataclass
+class HistoryStep:
+    label: str
+    frame: pd.DataFrame
+
+
+@dataclass
 class DataManager:
-    def __init__(self):
-        self.df = None
-        self.file_path = None
+    """Holds the active dataset and every mutation applied to it."""
 
-    def load_data(self, file_path):
-        """بارگذاری داده از فرمت‌های مختلف"""
-        self.file_path = file_path
-        ext = os.path.splitext(file_path)[1].lower()
-        
+    df: pd.DataFrame | None = None
+    source: str | None = None
+    history: list[HistoryStep] = field(default_factory=list)
+    _redo: list[HistoryStep] = field(default_factory=list)
+
+    # ---------------------------------------------------------------- loading
+    def load(self, path: str, **options: Any) -> tuple[bool, str]:
+        ext = os.path.splitext(path)[1].lower()
+        if ext not in SUPPORTED_IMPORT:
+            return False, f"Unsupported file type: {ext or path}"
         try:
-            if ext == '.csv':
-                self.df = pd.read_csv(file_path)
-            elif ext in ['.xls', '.xlsx']:
-                self.df = pd.read_excel(file_path)
-            elif ext == '.json':
-                self.df = pd.read_json(file_path)
+            if ext in (".csv", ".txt"):
+                df = pd.read_csv(path, sep=options.get("sep", None), engine="python")
+            elif ext == ".tsv":
+                df = pd.read_csv(path, sep="\t")
+            elif ext in (".xls", ".xlsx"):
+                df = pd.read_excel(path, sheet_name=options.get("sheet", 0))
+            elif ext == ".json":
+                df = pd.read_json(path)
+            elif ext == ".parquet":
+                df = pd.read_parquet(path)
             else:
-                raise ValueError(f"فرمت فایل پشتیبانی نمی‌شود: {ext}")
-            return True, "داده با موفقیت بارگذاری شد."
-        except Exception as e:
-            return False, str(e)
+                df = self._read_sqlite(path, options.get("table"))
+        except Exception as exc:  # pragma: no cover - surfaced in the UI
+            return False, str(exc)
 
-    def get_summary(self):
-        """دریافت خلاصه آماری داده‌ها"""
-        if self.df is not None:
-            return self.df.describe(include='all').to_dict()
-        return None
+        if isinstance(df, dict):
+            df = next(iter(df.values()))
+        self.df = df.reset_index(drop=True)
+        self.source = path
+        self.history = [HistoryStep("Imported dataset", self.df.copy())]
+        self._redo.clear()
+        return True, f"Loaded {len(self.df):,} rows x {self.df.shape[1]} columns"
 
-    def get_columns(self):
-        """دریافت نام ستون‌ها"""
-        if self.df is not None:
-            return self.df.columns.tolist()
-        return []
+    @staticmethod
+    def _read_sqlite(path: str, table: str | None) -> pd.DataFrame:
+        with sqlite3.connect(path) as conn:
+            if not table:
+                tables = pd.read_sql_query(
+                    "SELECT name FROM sqlite_master WHERE type='table'", conn
+                )
+                if tables.empty:
+                    raise ValueError("This SQLite database contains no tables.")
+                table = str(tables.iloc[0, 0])
+            return pd.read_sql_query(f'SELECT * FROM "{table}"', conn)
 
     def get_data_preview(self, rows=10):
         """دریافت پیش‌نمایش داده‌ها"""
