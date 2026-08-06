@@ -17,13 +17,27 @@ from PyQt6.QtWidgets import (
     QToolBar,
 )
 
-from core.data_manager import DataManager
+from core.data_manager import DataManager, SUPPORTED_IMPORT
+from core.version import APP_NAME, APP_VERSION, APP_TAGLINE, APP_PUBLISHER, APP_URL
+from core.project import load_project, save_project
+from core.report import ReportBuilder
 from ui.visualization_tab import VisualizationTab
 from ui.analysis_tab import AnalysisTab
 from ui.db_tab import DBTab
 from ui.cleaning_tab import CleaningTab
 from ui.automl_tab import AutoMLTab
 from ui.report_tab import ReportTab
+from ui.ai_assistant_tab import AIAssistantTab
+from ui.security_tab import SecurityTab
+from ui.streaming_tab import StreamingTab
+from ui.data_tab import DataTab
+from ui.transform_tab import TransformTab
+from ui.ml_tab import MLTab
+from ui.theme import stylesheet
+
+IMPORT_FILTER = ";;".join(
+    [f"{desc} (*{ext})" for ext, desc in SUPPORTED_IMPORT.items()]
+)
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
@@ -52,16 +66,36 @@ class MainWindow(QMainWindow):
     def _build_tabs(self) -> None:
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
+        
+        # Original Tabs
         self.data_tab = DataTab(self.manager)
         self.transform_tab = TransformTab(self.manager)
         self.analysis_tab = AnalysisTab(self.manager)
         self.viz_tab = VisualizationTab(self.manager, self.dark)
         self.ml_tab = MLTab(self.manager)
+        
+        # New Advanced Tabs
+        self.db_tab = DBTab(self.manager)
+        self.cleaning_tab = CleaningTab(self.manager)
+        self.automl_tab = AutoMLTab(self.manager)
+        self.report_tab = ReportTab(self.manager)
+        self.ai_assistant_tab = AIAssistantTab(self.manager)
+        self.security_tab = SecurityTab(self.manager)
+        self.streaming_tab = StreamingTab(self.manager)
+
         self.tabs.addTab(self.data_tab, "Data")
+        self.tabs.addTab(self.db_tab, "SQL Database")
         self.tabs.addTab(self.transform_tab, "Prepare")
+        self.tabs.addTab(self.cleaning_tab, "Smart Cleaning")
         self.tabs.addTab(self.analysis_tab, "Statistics")
         self.tabs.addTab(self.viz_tab, "Visualise")
-        self.tabs.addTab(self.ml_tab, "Machine learning")
+        self.tabs.addTab(self.ml_tab, "Machine Learning")
+        self.tabs.addTab(self.automl_tab, "AutoML (AI)")
+        self.tabs.addTab(self.ai_assistant_tab, "AI Assistant")
+        self.tabs.addTab(self.security_tab, "Security & Versions")
+        self.tabs.addTab(self.streaming_tab, "Live Streaming")
+        self.tabs.addTab(self.report_tab, "Report Generator")
+
         self.setCentralWidget(self.tabs)
 
         self.data_tab.dataChanged.connect(self.refresh_all)
@@ -77,26 +111,18 @@ class MainWindow(QMainWindow):
                 act.setShortcut(QKeySequence(shortcut))
             act.setStatusTip(tip or text)
             return act
-
-        # SQL DB Tab
-        self.db_tab = DBTab(self.data_manager)
-        self.tabs.addTab(self.db_tab, "SQL Database")
-
-        # Cleaning Tab
-        self.cleaning_tab = CleaningTab(self.data_manager)
-        self.tabs.addTab(self.cleaning_tab, "Smart Cleaning")
-
-        # AutoML Tab
-        self.automl_tab = AutoMLTab(self.data_manager)
-        self.tabs.addTab(self.automl_tab, "AutoML (AI)")
-
-        # Report Tab
-        self.report_tab = ReportTab(self.data_manager)
-        self.tabs.addTab(self.report_tab, "Report Generator")
-
-        # Analysis Tab
-        self.analysis_tab = AnalysisTab(self.data_manager)
-        self.tabs.addTab(self.analysis_tab, "Statistical Analysis")
+        
+        self.act_quit = action("&Quit", self.close, "Ctrl+Q", "Exit the application")
+        self.act_import = action("&Import data...", self.import_data, "Ctrl+I", "Import CSV, Excel or JSON")
+        self.act_sample = action("Load &sample", self.load_sample, "Ctrl+L", "Load retail sample dataset")
+        self.act_undo = action("&Undo", self.undo, "Ctrl+Z", "Revert last transformation")
+        self.act_redo = action("&Redo", self.redo, "Ctrl+Y", "Reapply transformation")
+        self.act_export = action("&Export data...", self.export_data, "Ctrl+E", "Save active dataset")
+        self.act_report = action("Export &report...", self.export_report, "Ctrl+R", "Generate HTML report")
+        self.act_theme = action("&Toggle theme", self.toggle_theme, "Ctrl+T", "Switch dark/light mode")
+        self.act_about = action("&About", self.show_about, None, "Show application info")
+        self.act_open_project = action("&Open project...", self.open_project, "Ctrl+O", "Load a saved project")
+        self.act_save_project = action("&Save project...", self.save_project_as, "Ctrl+S", "Save current state")
 
     def _build_menu(self) -> None:
         bar = self.menuBar()

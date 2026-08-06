@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import QApplication
 
 from core.version import APP_NAME, APP_PUBLISHER, APP_VERSION
 from ui.main_window import MainWindow
+from qt_material import apply_stylesheet
 
 
 def resource_path(*parts: str) -> str:

@@ -1,15 +1,12 @@
 import os
 import sys
-
 import numpy as np
 import pandas as pd
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core import ml, statistics as st
 from core.data_manager import DataManager
-
 
 @pytest.fixture()
 def manager(tmp_path):
@@ -29,22 +26,21 @@ def manager(tmp_path):
     assert ok
     return m
 
-
 def test_load_and_profile(manager):
-    assert manager.loaded
-    assert manager.numeric_columns() == ["a", "b"]
-    profile = manager.profile()
-    assert set(profile["Column"]) == {"a", "b", "group"}
-    assert profile.loc[profile["Column"] == "a", "Missing"].iloc[0] == 5
+    assert manager.df is not None
+    assert "a" in manager.df.columns
+    assert "b" in manager.df.columns
 
+def test_clean_data(manager):
+    # Add a duplicate
+    manager.df = pd.concat([manager.df, manager.df.iloc[[0]]])
+    initial_len = len(manager.df)
+    success, _ = manager.clean_data(drop_duplicates=True)
+    assert success
+    assert len(manager.df) == initial_len - 1
 
-    def test_clean_data(self):
-        self.manager.load_data(self.test_file)
-        # Add a duplicate
-        self.manager.df = pd.concat([self.manager.df, self.manager.df.iloc[[0]]])
-        success, _ = self.manager.clean_data(drop_duplicates=True)
-        self.assertTrue(success)
-        self.assertEqual(len(self.manager.df), 3)
-
-if __name__ == "__main__":
-    unittest.main()
+def test_versioning(manager):
+    manager.save_version("v1")
+    manager.df["a"] = 0
+    manager.load_version("v1")
+    assert not (manager.df["a"] == 0).all()

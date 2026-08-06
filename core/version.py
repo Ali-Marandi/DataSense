@@ -1,6 +1,6 @@
 """Single source of truth for product metadata."""
 APP_NAME = "DataSense"
-APP_VERSION = "1.0.0"
+APP_VERSION = "2.0.0"
 APP_TAGLINE = "Advanced data analysis, modelling and visualisation for Windows"
 APP_PUBLISHER = "Ali Marandi"
 APP_URL = "https://github.com/Ali-Marandi/DataSense"

@@ -76,6 +76,14 @@ class ReportBuilder:
             f"<img src='data:image/png;base64,{encoded}' alt='{html.escape(heading)}'/></section>"
         )
 
+    def add_plotly_figure(self, heading: str, fig) -> None:
+        """افزودن نمودار تعاملی Plotly به گزارش"""
+        import plotly.io as pio
+        html_div = pio.to_html(fig, full_html=False, include_plotlyjs='cdn')
+        self.blocks.append(
+            f"<section><h2>{html.escape(heading)}</h2>{html_div}</section>"
+        )
+
     def render(self) -> str:
         stamp = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
         return (

@@ -12,3 +12,9 @@ mysql-connector-python
 psycopg2-binary
 fpdf2
 pyyaml
+openai
+pyarrow
+fastparquet
+pandavro
+cryptography
+plotly
