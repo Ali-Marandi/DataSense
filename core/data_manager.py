@@ -17,7 +17,6 @@ SUPPORTED_IMPORT = {
     ".xlsx": "Excel workbook",
     ".json": "JSON records",
     ".parquet": "Apache Parquet",
-    ".avro": "Apache Avro",
     ".db": "SQLite database",
     ".sqlite": "SQLite database",
 }
@@ -37,9 +36,14 @@ class DataManager:
     source: str | None = None
     history: list[HistoryStep] = field(default_factory=list)
     _redo: list[HistoryStep] = field(default_factory=list)
-    versions: dict[str, pd.DataFrame] = field(default_factory=dict)
+    
+    @property
+    def loaded(self) -> bool:
+        """True if a dataset is currently active."""
+        return self.df is not None
 
     # ---------------------------------------------------------------- loading
+
     def load(self, path: str, **options: Any) -> tuple[bool, str]:
         ext = os.path.splitext(path)[1].lower()
         if ext not in SUPPORTED_IMPORT:
@@ -55,9 +59,6 @@ class DataManager:
                 df = pd.read_json(path)
             elif ext == ".parquet":
                 df = pd.read_parquet(path)
-            elif ext == ".avro":
-                import pandavro as pdx
-                df = pdx.read_avro(path)
             else:
                 df = self._read_sqlite(path, options.get("table"))
         except Exception as exc:  # pragma: no cover - surfaced in the UI
@@ -110,18 +111,3 @@ class DataManager:
             return True, "پاکسازی با موفقیت انجام شد."
         except Exception as e:
             return False, str(e)
-
-    def save_version(self, version_name):
-        """ذخیره نسخه فعلی داده‌ها"""
-        if self.df is not None:
-            self.versions[version_name] = self.df.copy()
-            return True, f"نسخه '{version_name}' ذخیره شد."
-        return False, "داده‌ای برای ذخیره وجود ندارد."
-
-    def load_version(self, version_name):
-        """بازیابی یک نسخه ذخیره شده"""
-        if version_name in self.versions:
-            self.df = self.versions[version_name].copy()
-            self.history.append(HistoryStep(f"Restored version: {version_name}", self.df.copy()))
-            return True, f"نسخه '{version_name}' بازیابی شد."
-        return False, f"نسخه '{version_name}' یافت نشد."
