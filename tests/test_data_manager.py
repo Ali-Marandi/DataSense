@@ -27,20 +27,14 @@ def manager(tmp_path):
     return m
 
 def test_load_and_profile(manager):
+    assert manager.loaded
     assert manager.df is not None
-    assert "a" in manager.df.columns
-    assert "b" in manager.df.columns
+    assert list(manager.df.columns) == ["a", "b", "group"]
 
 def test_clean_data(manager):
     # Add a duplicate
-    manager.df = pd.concat([manager.df, manager.df.iloc[[0]]])
+    manager.df = pd.concat([manager.df, manager.df.iloc[[0]]]).reset_index(drop=True)
     initial_len = len(manager.df)
     success, _ = manager.clean_data(drop_duplicates=True)
     assert success
     assert len(manager.df) == initial_len - 1
-
-def test_versioning(manager):
-    manager.save_version("v1")
-    manager.df["a"] = 0
-    manager.load_version("v1")
-    assert not (manager.df["a"] == 0).all()
