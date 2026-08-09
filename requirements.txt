@@ -18,3 +18,5 @@ fastparquet
 pandavro
 cryptography
 plotly
+joblib
+statsmodels

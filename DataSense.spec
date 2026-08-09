@@ -5,7 +5,8 @@ from PyInstaller.utils.hooks import collect_submodules
 hiddenimports = (
     collect_submodules("sklearn.utils")
     + collect_submodules("scipy.special")
-    + ["sklearn.ensemble", "sklearn.tree", "sklearn.svm", "sklearn.linear_model", "pyarrow"]
+    + collect_submodules("statsmodels.tsa")
+    + ["sklearn.ensemble", "sklearn.tree", "sklearn.svm", "sklearn.linear_model", "pyarrow", "joblib", "plotly", "statsmodels", "statsmodels.tsa.holtwinters", "statsmodels.tsa.seasonal", "core.insights", "core.sql", "core.timeseries", "core.model_store", "core.dashboard"]
 )
 
 a = Analysis(

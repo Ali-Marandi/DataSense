@@ -20,3 +20,13 @@ This project follows [Semantic Versioning](https://semver.org/).
 - Dark and light design system, keyboard shortcuts, recent files and status bar.
 - PyInstaller build recipe, Inno Setup installer and a GitHub Actions release pipeline.
 - Pytest suite covering the data engine, statistics and machine learning modules.
+
+## 2.1.0
+- Overview workspace with dataset health score and ranked automatic insights
+- SQL Console: real SQL over the active dataset with syntax highlighting
+- Time Series workspace: resampling, seasonal decomposition and forecasting (Holt-Winters, Exponential Smoothing, Linear Trend, Naive Seasonal) with 95% intervals
+- Interactive Plotly dashboards (self-contained HTML, Ctrl+D)
+- Model store: save/load .dsmodel bundles and score new datasets
+- Performance: chunked CSV loading, automatic dtype downcasting and memory optimisation
+- Fixed the broken DataManager API (loaded/set_frame/undo/redo/profile/export/query...) that failed CI and crashed the app
+- 56 regression tests covering every engine

@@ -33,6 +33,11 @@ from ui.streaming_tab import StreamingTab
 from ui.data_tab import DataTab
 from ui.transform_tab import TransformTab
 from ui.ml_tab import MLTab
+from ui.overview_tab import OverviewTab
+from ui.sql_tab import SQLTab
+from ui.timeseries_tab import TimeSeriesTab
+from ui.dashboard_tab import DashboardTab
+from core.dashboard import build_dashboard
 from ui.theme import stylesheet
 
 IMPORT_FILTER = ";;".join(
@@ -68,6 +73,10 @@ class MainWindow(QMainWindow):
         self.tabs.setDocumentMode(True)
         
         # Original Tabs
+        self.overview_tab = OverviewTab(self.manager)
+        self.sql_tab = SQLTab(self.manager)
+        self.timeseries_tab = TimeSeriesTab(self.manager)
+        self.dashboard_tab = DashboardTab(self.manager)
         self.data_tab = DataTab(self.manager)
         self.transform_tab = TransformTab(self.manager)
         self.analysis_tab = AnalysisTab(self.manager)
@@ -83,17 +92,21 @@ class MainWindow(QMainWindow):
         self.security_tab = SecurityTab(self.manager)
         self.streaming_tab = StreamingTab(self.manager)
 
+        self.tabs.addTab(self.overview_tab, "Overview")
         self.tabs.addTab(self.data_tab, "Data")
+        self.tabs.addTab(self.sql_tab, "SQL Console")
         self.tabs.addTab(self.db_tab, "SQL Database")
         self.tabs.addTab(self.transform_tab, "Prepare")
         self.tabs.addTab(self.cleaning_tab, "Smart Cleaning")
         self.tabs.addTab(self.analysis_tab, "Statistics")
         self.tabs.addTab(self.viz_tab, "Visualise")
+        self.tabs.addTab(self.timeseries_tab, "Time Series")
         self.tabs.addTab(self.ml_tab, "Machine Learning")
         self.tabs.addTab(self.automl_tab, "AutoML (AI)")
         self.tabs.addTab(self.ai_assistant_tab, "AI Assistant")
         self.tabs.addTab(self.security_tab, "Security & Versions")
         self.tabs.addTab(self.streaming_tab, "Live Streaming")
+        self.tabs.addTab(self.dashboard_tab, "Dashboards")
         self.tabs.addTab(self.report_tab, "Report Generator")
 
         self.setCentralWidget(self.tabs)
@@ -102,6 +115,9 @@ class MainWindow(QMainWindow):
         self.transform_tab.dataChanged.connect(self.refresh_all)
         self.analysis_tab.resultReady.connect(self._log_result)
         self.ml_tab.resultReady.connect(self._log_result)
+        self.sql_tab.dataChanged.connect(self.refresh_all)
+        self.sql_tab.resultReady.connect(self._log_result)
+        self.timeseries_tab.resultReady.connect(self._log_result)
 
     def _build_actions(self) -> None:
         def action(text: str, slot, shortcut: str | None = None, tip: str = "") -> QAction:
@@ -119,6 +135,7 @@ class MainWindow(QMainWindow):
         self.act_redo = action("&Redo", self.redo, "Ctrl+Y", "Reapply transformation")
         self.act_export = action("&Export data...", self.export_data, "Ctrl+E", "Save active dataset")
         self.act_report = action("Export &report...", self.export_report, "Ctrl+R", "Generate HTML report")
+        self.act_dashboard = action("Export &dashboard...", self.export_dashboard, "Ctrl+D", "Generate interactive dashboard")
         self.act_theme = action("&Toggle theme", self.toggle_theme, "Ctrl+T", "Switch dark/light mode")
         self.act_about = action("&About", self.show_about, None, "Show application info")
         self.act_open_project = action("&Open project...", self.open_project, "Ctrl+O", "Load a saved project")
@@ -132,7 +149,7 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addActions([self.act_open_project, self.act_save_project])
         file_menu.addSeparator()
-        file_menu.addActions([self.act_export, self.act_report])
+        file_menu.addActions([self.act_export, self.act_report, self.act_dashboard])
         file_menu.addSeparator()
         file_menu.addAction(self.act_quit)
 
@@ -160,7 +177,7 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         toolbar.addActions([self.act_undo, self.act_redo])
         toolbar.addSeparator()
-        toolbar.addActions([self.act_export, self.act_report, self.act_theme])
+        toolbar.addActions([self.act_export, self.act_report, self.act_dashboard, self.act_theme])
         self.addToolBar(toolbar)
 
     def _build_status(self) -> None:
@@ -296,6 +313,22 @@ class MainWindow(QMainWindow):
         report.save(path)
         self.statusBar().showMessage(f"Report exported to {path}", 8000)
 
+    def export_dashboard(self) -> None:
+        if not self._require_data():
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export dashboard", "datasense-dashboard.html", "HTML dashboard (*.html)"
+        )
+        if not path:
+            return
+        ok, message = build_dashboard(
+            self.manager.df, path,
+            title=f"{APP_NAME} dashboard",
+            subtitle=os.path.basename(self.manager.source or "in-memory dataset"),
+        )
+        (self.statusBar().showMessage(message, 8000) if ok
+         else QMessageBox.critical(self, "Dashboard failed", message))
+
     def _log_result(self, title: str, frame) -> None:
         self.analysis_log = [(t, f) for t, f in self.analysis_log if t != title]
         self.analysis_log.append((title, frame))
@@ -319,6 +352,7 @@ class MainWindow(QMainWindow):
         self.settings.setValue("dark", self.dark)
         self.apply_theme()
         self.viz_tab.apply_theme(self.dark)
+        self.timeseries_tab.apply_theme(self.dark)
         self.statusBar().showMessage(f"{'Dark' if self.dark else 'Light'} theme applied", 4000)
 
     def apply_theme(self) -> None:
@@ -357,7 +391,10 @@ class MainWindow(QMainWindow):
             self.recent_menu.addAction(act)
 
     def refresh_all(self) -> None:
-        for tab in (self.data_tab, self.transform_tab, self.analysis_tab, self.viz_tab, self.ml_tab):
+        for tab in (
+            self.overview_tab, self.data_tab, self.transform_tab, self.analysis_tab,
+            self.viz_tab, self.ml_tab, self.sql_tab, self.timeseries_tab, self.dashboard_tab,
+        ):
             tab.refresh()
         self.act_undo.setEnabled(self.manager.can_undo)
         self.act_redo.setEnabled(self.manager.can_redo)
