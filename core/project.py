@@ -7,6 +7,7 @@ import zipfile
 import pandas as pd
 
 from .data_manager import DataManager, HistoryStep
+from .governance import DataContract
 from .version import APP_VERSION
 
 MANIFEST = "datasense.json"
@@ -25,8 +26,9 @@ def save_project(manager: DataManager, path: str) -> tuple[bool, str]:
                         "version": APP_VERSION,
                         "source": manager.source,
                         "rows": int(len(manager.df)),
-                        "columns": manager.columns(),
+                        "columns": manager.columns,
                         "history": [step.label for step in manager.history],
+                        "governance_contract": manager.governance_contract.to_dict(),
                     },
                     indent=2,
                 ),
@@ -47,4 +49,6 @@ def load_project(manager: DataManager, path: str) -> tuple[bool, str]:
     manager.df = frame
     manager.source = manifest.get("source")
     manager.history = [HistoryStep("Opened project", frame.copy())]
+    manager.governance_contract = DataContract.from_dict(manifest.get("governance_contract"))
+    manager.governance_report = None
     return True, f"Project restored ({len(frame):,} rows)"

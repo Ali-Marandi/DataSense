@@ -14,6 +14,8 @@ from typing import Any, Iterable
 import numpy as np
 import pandas as pd
 
+from .governance import DataContract, QualityReport
+
 SUPPORTED_IMPORT = {
     ".csv": "Comma separated values",
     ".tsv": "Tab separated values",
@@ -64,6 +66,8 @@ class DataManager:
     _redo: list[HistoryStep] = field(default_factory=list)
     versions: dict[str, pd.DataFrame] = field(default_factory=dict)
     optimise_on_load: bool = True
+    governance_contract: DataContract = field(default_factory=DataContract)
+    governance_report: QualityReport | None = None
 
     # ------------------------------------------------------------- properties
     @property
@@ -143,6 +147,8 @@ class DataManager:
         self.source = path
         self.history = [HistoryStep("Imported dataset", self.df.copy())]
         self._redo.clear()
+        self.governance_contract = DataContract()
+        self.governance_report = None
         return True, f"Loaded {len(self.df):,} rows x {self.df.shape[1]} columns"
 
     def _read_delimited(self, path: str, ext: str, options: dict[str, Any]) -> pd.DataFrame:
@@ -198,6 +204,8 @@ class DataManager:
         self.history.append(HistoryStep(label, self.df.copy()))
         self.history = self.history[-50:]
         self._redo.clear()
+        # A previous validation report no longer describes the working dataset.
+        self.governance_report = None
 
     def undo(self) -> str | None:
         if not self.can_undo:
@@ -447,6 +455,15 @@ class DataManager:
             return True, "Cleaning completed successfully."
         except Exception as exc:
             return False, str(exc)
+
+    # -------------------------------------------------------------- governance
+    def set_governance_contract(self, contract: DataContract) -> None:
+        self.governance_contract = contract
+        self.governance_report = None
+
+    def run_governance_checks(self) -> QualityReport:
+        self.governance_report = self.governance_contract.execute(self.df)
+        return self.governance_report
 
     # --------------------------------------------------------------- versions
     def save_version(self, version_name: str) -> tuple[bool, str]:
