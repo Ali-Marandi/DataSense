@@ -1,13 +1,13 @@
-# DataSense 2.2.0 — Trusted Analytics
+# DataSense 2.2.1 — Windows Packaging Hotfix
 
-DataSense 2.2.0 adds **Trust Center**, a local-first governance workspace that helps analysts establish whether a dataset is fit for reporting, modelling or sharing. This release also repairs project persistence and workspace-refresh defects found during desktop startup validation.
+DataSense 2.2.1 is the production packaging patch for the **Trusted Analytics** release. It preserves the Trust Center, data contracts, audit evidence and desktop stability repairs introduced in 2.2.0, while correcting the Windows pipeline so it installs and invokes the regression runner deterministically before packaging.
 
 ## Downloads
 
 | File | Use it for |
 |---|---|
-| `DataSense-2.2.0-setup.exe` | Recommended installer with Start-menu shortcut, optional desktop shortcut and uninstaller. |
-| `DataSense-2.2.0-windows-x64-portable.zip` | Portable bundle; unzip it and run `DataSense.exe` without installation. |
+| `DataSense-2.2.1-setup.exe` | Recommended installer with Start-menu shortcut, optional desktop shortcut and uninstaller. |
+| `DataSense-2.2.1-windows-x64-portable.zip` | Portable bundle; unzip it and run `DataSense.exe` without installation. |
 | `DataSense.exe` | Standalone executable from the packaged bundle for controlled deployment tooling. |
 
 Windows 10 or Windows 11, 64-bit, is required. Python is bundled and is not required on the user’s computer.

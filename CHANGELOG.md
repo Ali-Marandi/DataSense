@@ -3,6 +3,12 @@
 All notable changes to DataSense are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.2.1] - 2026-08-12
+
+### Fixed
+- **Windows release pipeline:** install `pytest` explicitly and invoke it with `python -m pytest` so the Windows runner validates the release before packaging.
+- **Executable metadata:** align Windows file and product versions with the packaging hotfix.
+
 ## [2.2.0] - 2026-08-12
 
 ### Added
