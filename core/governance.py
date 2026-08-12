@@ -106,6 +106,117 @@ class QualityCheckResult:
         }
 
 
+@dataclass(frozen=True)
+class QualityGatePolicy:
+    """A serialisable release gate that turns quality evidence into a deterministic decision."""
+
+    name: str = "Default production gate"
+    minimum_score: float = 95.0
+    maximum_critical_failures: int = 0
+    maximum_high_failures: int = 0
+    block_on_error: bool = True
+
+    def __post_init__(self) -> None:
+        if not 0 <= float(self.minimum_score) <= 100:
+            raise ValueError("minimum_score must be between 0 and 100")
+        if self.maximum_critical_failures < 0 or self.maximum_high_failures < 0:
+            raise ValueError("maximum failures cannot be negative")
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any] | None) -> "QualityGatePolicy":
+        if not value:
+            return cls()
+        return cls(
+            name=str(value.get("name", "Default production gate")),
+            minimum_score=float(value.get("minimum_score", 95.0)),
+            maximum_critical_failures=int(value.get("maximum_critical_failures", 0)),
+            maximum_high_failures=int(value.get("maximum_high_failures", 0)),
+            block_on_error=bool(value.get("block_on_error", True)),
+        )
+
+
+@dataclass(frozen=True)
+class QualityGateDecision:
+    policy_name: str
+    decision: str
+    reasons: tuple[str, ...]
+    score: float | None
+
+    @property
+    def allowed(self) -> bool:
+        return self.decision == "approved"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"policy_name": self.policy_name, "decision": self.decision, "reasons": list(self.reasons), "score": self.score}
+
+
+@dataclass(frozen=True)
+class QualityRunRecord:
+    """Privacy-preserving historical evidence; it retains outcomes and no dataset values."""
+
+    contract_name: str
+    generated_at: str
+    rows: int
+    score: float | None
+    status: str
+    gate_decision: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "QualityRunRecord":
+        score = value.get("score")
+        return cls(
+            contract_name=str(value.get("contract_name", "")),
+            generated_at=str(value.get("generated_at", "")),
+            rows=int(value.get("rows", 0)),
+            score=None if score is None else float(score),
+            status=str(value.get("status", "not configured")),
+            gate_decision=str(value.get("gate_decision", "not configured")),
+        )
+
+
+@dataclass
+class QualityHistory:
+    """Bounded quality trend suitable for .dsproj persistence and executive reporting."""
+
+    records: list[QualityRunRecord] = field(default_factory=list)
+    max_records: int = 90
+
+    def add(self, report: "QualityReport", decision: QualityGateDecision) -> QualityRunRecord:
+        record = QualityRunRecord(report.contract_name, report.generated_at, report.rows, report.score, report.status, decision.decision)
+        self.records.append(record)
+        self.records = self.records[-max(int(self.max_records), 1):]
+        return record
+
+    def trend(self) -> str:
+        values = [record.score for record in self.records if record.score is not None]
+        if len(values) < 2:
+            return "insufficient data"
+        delta = values[-1] - values[-2]
+        if delta >= 1.0:
+            return "improving"
+        if delta <= -1.0:
+            return "declining"
+        return "stable"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"max_records": self.max_records, "trend": self.trend(), "records": [record.to_dict() for record in self.records]}
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any] | None) -> "QualityHistory":
+        if not value:
+            return cls()
+        return cls(
+            max_records=max(int(value.get("max_records", 90)), 1),
+            records=[QualityRunRecord.from_dict(item) for item in value.get("records", [])],
+        )
+
+
 @dataclass
 class QualityReport:
     """The immutable-at-export evidence produced by one contract execution."""
@@ -146,6 +257,25 @@ class QualityReport:
         if any(result.status == "fail" for result in self.evaluated):
             return "needs attention"
         return "trusted"
+
+    def gate_decision(self, policy: QualityGatePolicy | None = None) -> QualityGateDecision:
+        """Apply a policy after execution without changing the independently computed quality score."""
+        policy = policy or QualityGatePolicy()
+        if self.score is None:
+            return QualityGateDecision(policy.name, "not configured", ("No evaluated quality rules are available.",), self.score)
+        errors = sum(result.status == "error" for result in self.evaluated)
+        critical = sum(result.status == "fail" and result.rule.severity.lower() == "critical" for result in self.evaluated)
+        high = sum(result.status == "fail" and result.rule.severity.lower() == "high" for result in self.evaluated)
+        reasons: list[str] = []
+        if policy.block_on_error and errors:
+            reasons.append(f"{errors} rule execution error(s) require review.")
+        if critical > policy.maximum_critical_failures:
+            reasons.append(f"{critical} critical failure(s) exceed the limit of {policy.maximum_critical_failures}.")
+        if high > policy.maximum_high_failures:
+            reasons.append(f"{high} high-severity failure(s) exceed the limit of {policy.maximum_high_failures}.")
+        if self.score < policy.minimum_score:
+            reasons.append(f"Score {self.score:.1f}% is below the minimum {policy.minimum_score:.1f}%.")
+        return QualityGateDecision(policy.name, "blocked" if reasons else "approved", tuple(reasons or ("All configured quality gate conditions passed.",)), self.score)
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -197,6 +327,7 @@ class QualityReport:
             "status": self.status,
             "score": self.score,
             "summary": self.summary(),
+            "gate_decision": self.gate_decision().to_dict(),
             "results": [result.to_dict() for result in self.results],
         }
 

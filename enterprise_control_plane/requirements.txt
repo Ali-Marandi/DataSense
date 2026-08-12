@@ -1,0 +1,11 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
+pydantic-settings==2.7.1
+PyJWT[crypto]==2.10.1
+python-multipart==0.0.20
+python3-saml==1.16.0
+psycopg[binary,pool]==3.2.6
+redis==5.2.1
+structlog==25.1.0
+pytest==8.3.5
+httpx==0.28.1

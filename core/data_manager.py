@@ -14,7 +14,7 @@ from typing import Any, Iterable
 import numpy as np
 import pandas as pd
 
-from .governance import DataContract, QualityReport
+from .governance import DataContract, QualityGatePolicy, QualityHistory, QualityReport
 
 SUPPORTED_IMPORT = {
     ".csv": "Comma separated values",
@@ -68,6 +68,8 @@ class DataManager:
     optimise_on_load: bool = True
     governance_contract: DataContract = field(default_factory=DataContract)
     governance_report: QualityReport | None = None
+    quality_gate_policy: QualityGatePolicy = field(default_factory=QualityGatePolicy)
+    quality_history: QualityHistory = field(default_factory=QualityHistory)
 
     # ------------------------------------------------------------- properties
     @property
@@ -149,6 +151,8 @@ class DataManager:
         self._redo.clear()
         self.governance_contract = DataContract()
         self.governance_report = None
+        self.quality_gate_policy = QualityGatePolicy()
+        self.quality_history = QualityHistory()
         return True, f"Loaded {len(self.df):,} rows x {self.df.shape[1]} columns"
 
     def _read_delimited(self, path: str, ext: str, options: dict[str, Any]) -> pd.DataFrame:
@@ -461,8 +465,12 @@ class DataManager:
         self.governance_contract = contract
         self.governance_report = None
 
+    def set_quality_gate_policy(self, policy: QualityGatePolicy) -> None:
+        self.quality_gate_policy = policy
+
     def run_governance_checks(self) -> QualityReport:
         self.governance_report = self.governance_contract.execute(self.df)
+        self.quality_history.add(self.governance_report, self.governance_report.gate_decision(self.quality_gate_policy))
         return self.governance_report
 
     # --------------------------------------------------------------- versions

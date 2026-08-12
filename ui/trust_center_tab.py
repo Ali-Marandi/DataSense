@@ -79,7 +79,7 @@ class TrustCenterTab(QWidget):
         self.summary_grid = QGridLayout()
         self.summary_grid.setSpacing(10)
         self.summary: dict[str, QLabel] = {}
-        for index, caption in enumerate(["Trust status", "Quality score", "Configured rules", "Failed checks"]):
+        for index, caption in enumerate(["Trust status", "Quality score", "Release gate", "Quality trend", "Failed checks"]):
             card = QGroupBox(caption.upper())
             layout = QVBoxLayout(card)
             value = QLabel("—")
@@ -278,8 +278,14 @@ class TrustCenterTab(QWidget):
         if not path:
             return
         try:
+            evidence = {
+                "report": report.to_dict(),
+                "quality_gate_policy": self.manager.quality_gate_policy.to_dict(),
+                "quality_gate_decision": report.gate_decision(self.manager.quality_gate_policy).to_dict(),
+                "quality_history": self.manager.quality_history.to_dict(),
+            }
             with open(path, "w", encoding="utf-8") as handle:
-                handle.write(report.to_json())
+                json.dump(evidence, handle, ensure_ascii=False, indent=2)
         except OSError as exc:
             QMessageBox.critical(self, "Export failed", str(exc))
             return
@@ -313,7 +319,9 @@ class TrustCenterTab(QWidget):
         self._populate_table(self.results_table, report.to_frame())
         self.summary["Trust status"].setText(report.status.title())
         self.summary["Quality score"].setText("Not configured" if report.score is None else f"{report.score:.1f}%")
-        self.summary["Configured rules"].setText(str(len(report.results)))
+        gate = report.gate_decision(self.manager.quality_gate_policy)
+        self.summary["Release gate"].setText(gate.decision.title())
+        self.summary["Quality trend"].setText(self.manager.quality_history.trend().title())
         self.summary["Failed checks"].setText(str(sum(result.status == "fail" for result in report.results)))
 
     def refresh(self) -> None:
@@ -333,7 +341,8 @@ class TrustCenterTab(QWidget):
             self.results_table.setRowCount(0)
             self.summary["Trust status"].setText("Not configured" if not self.manager.governance_contract.rules else "Not run")
             self.summary["Quality score"].setText("—")
-            self.summary["Configured rules"].setText(str(len(self.manager.governance_contract.rules)))
+            self.summary["Release gate"].setText("Not run")
+            self.summary["Quality trend"].setText(self.manager.quality_history.trend().title())
             self.summary["Failed checks"].setText("—")
         if not has_data:
             self.pii_table.setRowCount(0)

@@ -111,3 +111,52 @@ def test_project_round_trip_keeps_contract_but_requires_rerun(tmp_path):
     assert restored.governance_contract.name == "Key contract"
     assert restored.governance_contract.rules[0].rule_type == "unique"
     assert restored.governance_report is None
+
+
+def test_quality_gate_blocks_low_score_and_critical_failure():
+    from core.governance import QualityGatePolicy
+
+    report = DataContract(
+        "Sales gate",
+        [DataQualityRule("not_null", "customer_id", severity="critical")],
+    ).execute(sample_frame())
+
+    decision = report.gate_decision(QualityGatePolicy(name="Release gate", minimum_score=99.0))
+
+    assert decision.decision == "blocked"
+    assert decision.score == 0.0
+    assert any("critical" in reason for reason in decision.reasons)
+
+
+def test_quality_history_tracks_only_quality_metadata_and_direction():
+    from core.governance import QualityHistory
+
+    contract = DataContract("Trend", [DataQualityRule("unique", "customer_id", severity="high")])
+    history = QualityHistory()
+    first = contract.execute(pd.DataFrame({"customer_id": ["A", "A"]}))
+    history.add(first, first.gate_decision())
+    second = contract.execute(pd.DataFrame({"customer_id": ["A", "B"]}))
+    history.add(second, second.gate_decision())
+
+    assert history.trend() == "improving"
+    exported = history.to_dict()
+    assert exported["records"][-1]["score"] == 100.0
+    assert "customer_id" not in str(exported)
+
+
+def test_project_round_trip_keeps_quality_policy_and_history(tmp_path):
+    from core.governance import QualityGatePolicy
+
+    manager = DataManager(df=pd.DataFrame({"id": [1, 2]}), source="memory")
+    manager.history = []
+    manager.set_governance_contract(DataContract("Key contract", [DataQualityRule("unique", "id")]))
+    manager.set_quality_gate_policy(QualityGatePolicy(name="Controlled release", minimum_score=100.0))
+    manager.run_governance_checks()
+    path = tmp_path / "project.dsproj"
+
+    assert save_project(manager, str(path))[0]
+    restored = DataManager()
+    assert load_project(restored, str(path))[0]
+    assert restored.quality_gate_policy.name == "Controlled release"
+    assert len(restored.quality_history.records) == 1
+    assert restored.quality_history.records[0].gate_decision == "approved"
