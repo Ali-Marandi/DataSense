@@ -8,3 +8,8 @@ installer/output/
 *.spec.bak
 .pytest_cache/
 *.dsproj
+
+# Reproducible local test artifacts; retain curated Markdown validation reports.
+validation_evidence/*.log
+validation_evidence/*.xml
+validation_evidence/passed_test_cases.txt

@@ -107,6 +107,135 @@ class QualityCheckResult:
 
 
 @dataclass(frozen=True)
+class SchemaSnapshot:
+    """A privacy-preserving schema baseline; values and samples are never stored."""
+
+    columns: tuple[tuple[str, str, bool], ...]
+    captured_at: str = field(default_factory=lambda: datetime.now(timezone.utc).replace(microsecond=0).isoformat())
+
+    @property
+    def fingerprint(self) -> str:
+        import hashlib
+        payload = json.dumps({"columns": self.columns}, ensure_ascii=False, separators=(",", ":"), default=str)
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"columns": [{"name": name, "dtype": dtype, "nullable": nullable} for name, dtype, nullable in self.columns], "captured_at": self.captured_at, "fingerprint": self.fingerprint}
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any] | None) -> "SchemaSnapshot | None":
+        if not value:
+            return None
+        columns = value.get("columns", [])
+        return cls(
+            columns=tuple((str(item["name"]), str(item["dtype"]), bool(item["nullable"])) for item in columns),
+            captured_at=str(value.get("captured_at", datetime.now(timezone.utc).replace(microsecond=0).isoformat())),
+        )
+
+
+@dataclass(frozen=True)
+class SchemaDriftPolicy:
+    """Compatibility policy for controlled schema evolution between contract runs."""
+
+    name: str = "Default schema compatibility policy"
+    allow_added_columns: bool = True
+    allow_removed_columns: bool = False
+    allow_dtype_changes: bool = False
+    allow_nullability_relaxation: bool = False
+    allow_column_reordering: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any] | None) -> "SchemaDriftPolicy":
+        if not value:
+            return cls()
+        return cls(
+            name=str(value.get("name", "Default schema compatibility policy")),
+            allow_added_columns=bool(value.get("allow_added_columns", True)),
+            allow_removed_columns=bool(value.get("allow_removed_columns", False)),
+            allow_dtype_changes=bool(value.get("allow_dtype_changes", False)),
+            allow_nullability_relaxation=bool(value.get("allow_nullability_relaxation", False)),
+            allow_column_reordering=bool(value.get("allow_column_reordering", True)),
+        )
+
+
+@dataclass(frozen=True)
+class SchemaDriftReport:
+    policy_name: str
+    decision: str
+    baseline_fingerprint: str | None
+    current_fingerprint: str | None
+    added_columns: tuple[str, ...] = ()
+    removed_columns: tuple[str, ...] = ()
+    dtype_changes: tuple[str, ...] = ()
+    nullability_relaxations: tuple[str, ...] = ()
+    column_order_changed: bool = False
+    reasons: tuple[str, ...] = ()
+
+    @property
+    def has_drift(self) -> bool:
+        return bool(self.added_columns or self.removed_columns or self.dtype_changes or self.nullability_relaxations or self.column_order_changed)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "policy_name": self.policy_name, "decision": self.decision,
+            "baseline_fingerprint": self.baseline_fingerprint, "current_fingerprint": self.current_fingerprint,
+            "added_columns": list(self.added_columns), "removed_columns": list(self.removed_columns),
+            "dtype_changes": list(self.dtype_changes), "nullability_relaxations": list(self.nullability_relaxations),
+            "column_order_changed": self.column_order_changed, "reasons": list(self.reasons),
+        }
+
+
+def capture_schema(frame: pd.DataFrame | None) -> SchemaSnapshot | None:
+    """Create an immutable schema-only evidence record without inspecting retained values."""
+    if frame is None:
+        return None
+    return SchemaSnapshot(tuple((str(column), str(frame[column].dtype), bool(frame[column].isna().any())) for column in frame.columns))
+
+
+def compare_schema(
+    baseline: SchemaSnapshot | None,
+    frame: pd.DataFrame | None,
+    policy: SchemaDriftPolicy | None = None,
+) -> SchemaDriftReport:
+    """Compare a current frame to an approved schema baseline and apply compatibility policy."""
+    policy = policy or SchemaDriftPolicy()
+    current = capture_schema(frame)
+    if baseline is None or current is None:
+        return SchemaDriftReport(policy.name, "not configured", baseline.fingerprint if baseline else None, current.fingerprint if current else None, reasons=("A baseline and current dataset are required for schema comparison.",))
+    expected = {name: (dtype, nullable) for name, dtype, nullable in baseline.columns}
+    observed = {name: (dtype, nullable) for name, dtype, nullable in current.columns}
+    added = tuple(name for name in observed if name not in expected)
+    removed = tuple(name for name in expected if name not in observed)
+    dtype_changes = tuple(name for name in expected if name in observed and expected[name][0] != observed[name][0])
+    nullable = tuple(name for name in expected if name in observed and not expected[name][1] and observed[name][1])
+    common_baseline = tuple(name for name, _, _ in baseline.columns if name in observed)
+    common_current = tuple(name for name, _, _ in current.columns if name in expected)
+    order_changed = common_baseline != common_current
+    reasons: list[str] = []
+    if added and not policy.allow_added_columns:
+        reasons.append(f"Added column(s) violate policy: {', '.join(added)}.")
+    if removed and not policy.allow_removed_columns:
+        reasons.append(f"Removed column(s) violate policy: {', '.join(removed)}.")
+    if dtype_changes and not policy.allow_dtype_changes:
+        reasons.append(f"Data type change(s) violate policy: {', '.join(dtype_changes)}.")
+    if nullable and not policy.allow_nullability_relaxation:
+        reasons.append(f"Newly nullable column(s) violate policy: {', '.join(nullable)}.")
+    if order_changed and not policy.allow_column_reordering:
+        reasons.append("Column ordering change violates policy.")
+    if not reasons and (added or removed or dtype_changes or nullable or order_changed):
+        reasons.append("Schema changes comply with the configured compatibility policy.")
+    if not reasons:
+        reasons.append("Schema matches the approved baseline.")
+    return SchemaDriftReport(
+        policy.name, "blocked" if any("violate policy" in reason for reason in reasons) else "compatible",
+        baseline.fingerprint, current.fingerprint, added, removed, dtype_changes, nullable, order_changed, tuple(reasons),
+    )
+
+
+@dataclass(frozen=True)
 class QualityGatePolicy:
     """A serialisable release gate that turns quality evidence into a deterministic decision."""
 

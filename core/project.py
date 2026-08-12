@@ -7,7 +7,7 @@ import zipfile
 import pandas as pd
 
 from .data_manager import DataManager, HistoryStep
-from .governance import DataContract, QualityGatePolicy, QualityHistory
+from .governance import DataContract, QualityGatePolicy, QualityHistory, SchemaDriftPolicy, SchemaSnapshot
 from .version import APP_VERSION
 
 MANIFEST = "datasense.json"
@@ -31,6 +31,8 @@ def save_project(manager: DataManager, path: str) -> tuple[bool, str]:
                         "governance_contract": manager.governance_contract.to_dict(),
                         "quality_gate_policy": manager.quality_gate_policy.to_dict(),
                         "quality_history": manager.quality_history.to_dict(),
+                        "schema_baseline": manager.schema_baseline.to_dict() if manager.schema_baseline else None,
+                        "schema_drift_policy": manager.schema_drift_policy.to_dict(),
                     },
                     indent=2,
                 ),
@@ -54,5 +56,7 @@ def load_project(manager: DataManager, path: str) -> tuple[bool, str]:
     manager.governance_contract = DataContract.from_dict(manifest.get("governance_contract"))
     manager.quality_gate_policy = QualityGatePolicy.from_dict(manifest.get("quality_gate_policy"))
     manager.quality_history = QualityHistory.from_dict(manifest.get("quality_history"))
+    manager.schema_baseline = SchemaSnapshot.from_dict(manifest.get("schema_baseline"))
+    manager.schema_drift_policy = SchemaDriftPolicy.from_dict(manifest.get("schema_drift_policy"))
     manager.governance_report = None
     return True, f"Project restored ({len(frame):,} rows)"

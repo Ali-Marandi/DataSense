@@ -14,7 +14,17 @@ from typing import Any, Iterable
 import numpy as np
 import pandas as pd
 
-from .governance import DataContract, QualityGatePolicy, QualityHistory, QualityReport
+from .governance import (
+    DataContract,
+    QualityGatePolicy,
+    QualityHistory,
+    QualityReport,
+    SchemaDriftPolicy,
+    SchemaDriftReport,
+    SchemaSnapshot,
+    capture_schema,
+    compare_schema,
+)
 
 SUPPORTED_IMPORT = {
     ".csv": "Comma separated values",
@@ -70,6 +80,8 @@ class DataManager:
     governance_report: QualityReport | None = None
     quality_gate_policy: QualityGatePolicy = field(default_factory=QualityGatePolicy)
     quality_history: QualityHistory = field(default_factory=QualityHistory)
+    schema_baseline: SchemaSnapshot | None = None
+    schema_drift_policy: SchemaDriftPolicy = field(default_factory=SchemaDriftPolicy)
 
     # ------------------------------------------------------------- properties
     @property
@@ -153,6 +165,8 @@ class DataManager:
         self.governance_report = None
         self.quality_gate_policy = QualityGatePolicy()
         self.quality_history = QualityHistory()
+        self.schema_baseline = None
+        self.schema_drift_policy = SchemaDriftPolicy()
         return True, f"Loaded {len(self.df):,} rows x {self.df.shape[1]} columns"
 
     def _read_delimited(self, path: str, ext: str, options: dict[str, Any]) -> pd.DataFrame:
@@ -467,6 +481,19 @@ class DataManager:
 
     def set_quality_gate_policy(self, policy: QualityGatePolicy) -> None:
         self.quality_gate_policy = policy
+
+    def set_schema_baseline(self) -> SchemaSnapshot:
+        baseline = capture_schema(self._require())
+        if baseline is None:  # defensive guard; _require already guarantees a frame
+            raise ValueError("No dataset loaded.")
+        self.schema_baseline = baseline
+        return baseline
+
+    def set_schema_drift_policy(self, policy: SchemaDriftPolicy) -> None:
+        self.schema_drift_policy = policy
+
+    def check_schema_drift(self) -> SchemaDriftReport:
+        return compare_schema(self.schema_baseline, self.df, self.schema_drift_policy)
 
     def run_governance_checks(self) -> QualityReport:
         self.governance_report = self.governance_contract.execute(self.df)

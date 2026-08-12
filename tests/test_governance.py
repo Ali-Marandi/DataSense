@@ -160,3 +160,41 @@ def test_project_round_trip_keeps_quality_policy_and_history(tmp_path):
     assert restored.quality_gate_policy.name == "Controlled release"
     assert len(restored.quality_history.records) == 1
     assert restored.quality_history.records[0].gate_decision == "approved"
+
+
+def test_schema_drift_blocks_breaking_dtype_and_nullability_changes_without_retaining_values():
+    manager = DataManager(df=pd.DataFrame({"customer_id": ["A", "B"], "amount": [1, 2]}))
+    baseline = manager.set_schema_baseline()
+
+    manager.set_frame(
+        pd.DataFrame({"customer_id": [1, 2], "amount": [1, None], "region": ["N", "S"]}),
+        "Simulated upstream schema change",
+    )
+    report = manager.check_schema_drift()
+
+    assert report.decision == "blocked"
+    assert report.added_columns == ("region",)
+    assert set(report.dtype_changes) == {"customer_id", "amount"}
+    assert report.nullability_relaxations == ("amount",)
+    schema_evidence = str(baseline.to_dict())
+    assert "'A'" not in schema_evidence
+    assert "'B'" not in schema_evidence
+
+
+def test_schema_drift_policy_can_reject_additive_columns_and_persists_with_project(tmp_path):
+    from core.governance import SchemaDriftPolicy
+
+    manager = DataManager(df=pd.DataFrame({"id": [1, 2]}), source="memory")
+    manager.history = []
+    manager.set_schema_baseline()
+    manager.set_schema_drift_policy(SchemaDriftPolicy(name="Strict schema", allow_added_columns=False))
+    manager.set_frame(pd.DataFrame({"id": [1, 2], "country": ["IR", "DE"]}), "Added country")
+
+    assert manager.check_schema_drift().decision == "blocked"
+    path = tmp_path / "schema.dsproj"
+    assert save_project(manager, str(path))[0]
+    restored = DataManager()
+    assert load_project(restored, str(path))[0]
+    assert restored.schema_baseline is not None
+    assert restored.schema_drift_policy.name == "Strict schema"
+    assert restored.check_schema_drift().decision == "blocked"

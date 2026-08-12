@@ -32,3 +32,14 @@ NIST SP 800-63C قدیمی‌تر است و صفحهٔ NIST به SP 800-63-4 ب�
 - https://www.aicpa-cima.com/resources/download/2017-trust-services-criteria-with-revised-points-of-focus-2022
 - https://www.iso.org/standard/27001
 - https://pages.nist.gov/800-63-3/sp800-63c.html
+
+## Data Observability و Schema Drift
+
+Schema drift تغییر غیرمنتظره یا ناخواسته در ساختار داده، مانند افزودن/حذف ستون یا تغییر نوع داده است و اگر رهگیری نشود می‌تواند به ناهماهنگی، شکست برنامه و گزارش نادرست منجر شود. راهکار عملی برای DataSense، snapshot نسخه‌دار schema، مقایسهٔ deterministic و policy سازگاری است.
+
+Data contract صرفاً schema نیست و می‌تواند structure، integrity constraints، metadata، policy و تکامل/نسخه‌بندی را پوشش دهد. این یافته مبنای افزودن Schema Drift Guard به Trust Center است: تغییرهای additive در حالت permissive قابل‌قبول یا قابل‌هشدارند؛ حذف ستون، تغییر نوع و تغییر nullability با توجه به policy block می‌شوند.
+
+منابع:
+- https://docs.confluent.io/cloud/current/sr/fundamentals/data-contracts.html
+- https://www.acceldata.io/blog/schema-drift
+- https://montecarlo.ai/blog-data-contracts-explained

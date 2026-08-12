@@ -72,14 +72,21 @@ class TrustCenterTab(QWidget):
         self.scan_button.clicked.connect(self.scan_sensitive_data)
         self.run_button = QPushButton("Run quality checks")
         self.run_button.clicked.connect(self.run_checks)
+        self.schema_baseline_button = QPushButton("Approve current schema")
+        self.schema_baseline_button.setToolTip("Create a schema-only baseline; no dataset values are retained.")
+        self.schema_baseline_button.clicked.connect(self.approve_schema_baseline)
+        self.schema_check_button = QPushButton("Check schema drift")
+        self.schema_check_button.clicked.connect(self.check_schema_drift)
         header.addWidget(self.scan_button)
         header.addWidget(self.run_button)
+        header.addWidget(self.schema_baseline_button)
+        header.addWidget(self.schema_check_button)
         root.addLayout(header)
 
         self.summary_grid = QGridLayout()
         self.summary_grid.setSpacing(10)
         self.summary: dict[str, QLabel] = {}
-        for index, caption in enumerate(["Trust status", "Quality score", "Release gate", "Quality trend", "Failed checks"]):
+        for index, caption in enumerate(["Trust status", "Quality score", "Release gate", "Quality trend", "Schema guard", "Failed checks"]):
             card = QGroupBox(caption.upper())
             layout = QVBoxLayout(card)
             value = QLabel("—")
@@ -264,6 +271,29 @@ class TrustCenterTab(QWidget):
         self._render_report(report)
         self.refresh()
 
+    def approve_schema_baseline(self) -> None:
+        if not self._require_dataset():
+            return
+        baseline = self.manager.set_schema_baseline()
+        self.refresh()
+        QMessageBox.information(
+            self,
+            "Schema baseline approved",
+            f"Stored a schema-only baseline for {len(baseline.columns)} column(s).\nFingerprint: {baseline.fingerprint[:16]}…",
+        )
+
+    def check_schema_drift(self) -> None:
+        if not self._require_dataset():
+            return
+        report = self.manager.check_schema_drift()
+        self.refresh()
+        details = "\n".join(report.reasons)
+        message = f"Decision: {report.decision.title()}\n\n{details}"
+        if report.decision == "blocked":
+            QMessageBox.warning(self, "Schema drift blocked", message)
+        else:
+            QMessageBox.information(self, "Schema drift check", message)
+
     def export_audit(self) -> None:
         report = self.manager.governance_report
         if report is None:
@@ -283,6 +313,9 @@ class TrustCenterTab(QWidget):
                 "quality_gate_policy": self.manager.quality_gate_policy.to_dict(),
                 "quality_gate_decision": report.gate_decision(self.manager.quality_gate_policy).to_dict(),
                 "quality_history": self.manager.quality_history.to_dict(),
+                "schema_baseline": self.manager.schema_baseline.to_dict() if self.manager.schema_baseline else None,
+                "schema_drift_policy": self.manager.schema_drift_policy.to_dict(),
+                "schema_drift_report": self.manager.check_schema_drift().to_dict(),
             }
             with open(path, "w", encoding="utf-8") as handle:
                 json.dump(evidence, handle, ensure_ascii=False, indent=2)
@@ -322,12 +355,15 @@ class TrustCenterTab(QWidget):
         gate = report.gate_decision(self.manager.quality_gate_policy)
         self.summary["Release gate"].setText(gate.decision.title())
         self.summary["Quality trend"].setText(self.manager.quality_history.trend().title())
+        self.summary["Schema guard"].setText(self.manager.check_schema_drift().decision.title())
         self.summary["Failed checks"].setText(str(sum(result.status == "fail" for result in report.results)))
 
     def refresh(self) -> None:
         has_data = self.manager.loaded
         self.scan_button.setEnabled(has_data)
         self.run_button.setEnabled(has_data)
+        self.schema_baseline_button.setEnabled(has_data)
+        self.schema_check_button.setEnabled(has_data)
         self.recommend_button.setEnabled(has_data)
         self.add_rule_button.setEnabled(has_data)
         self.rule_column.clear()
@@ -343,6 +379,7 @@ class TrustCenterTab(QWidget):
             self.summary["Quality score"].setText("—")
             self.summary["Release gate"].setText("Not run")
             self.summary["Quality trend"].setText(self.manager.quality_history.trend().title())
+            self.summary["Schema guard"].setText(self.manager.check_schema_drift().decision.title() if has_data else "Not configured")
             self.summary["Failed checks"].setText("—")
         if not has_data:
             self.pii_table.setRowCount(0)
