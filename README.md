@@ -60,6 +60,13 @@ box, violin, pie and correlation heatmap — with grouping, zoom/pan toolbar and
 - **Unsupervised**: K-Means (silhouette score, inertia, centroids) and PCA (explained variance).
 - Training runs on a worker thread so the interface never freezes; predictions and clusters can be appended back to the dataset.
 
+### Trust Center
+- **Local sensitive-data scan** flags likely email, phone, IP-address and payment-card fields without storing detected values or sending the dataset anywhere.
+- **Data contracts** enforce not-null, uniqueness, numeric ranges, allowed values, regular-expression formats and data freshness with severity levels.
+- **Review-first quality controls**: recommended rules are explicit, editable and never mutate your data; every data mutation invalidates a prior quality result.
+- Export a portable **JSON audit report** and include the latest Trust Center evidence in the styled HTML analysis report.
+- `.dsproj` files preserve the data contract, while checks are deliberately re-run after restore to keep validation current.
+
 ### Reporting and projects
 - One-click **styled HTML report** covering dataset overview, quality profile, sample rows, every analysis run in the session, the latest chart and the full processing log.
 - `.dsproj` project files store the dataset together with its processing history.
@@ -110,7 +117,8 @@ core/
   statistics.py         Descriptive and inferential statistics
   ml.py                 Regression, classification, clustering, PCA
   report.py             Styled HTML report builder
-  project.py            .dsproj save/load (zip + parquet)
+  project.py            .dsproj save/load (zip + parquet + governance contract)
+  governance.py         Data contracts, local PII classification and audit evidence
   version.py            Product metadata
 ui/
   main_window.py        Menus, toolbar, session commands, reporting

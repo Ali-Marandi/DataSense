@@ -1,21 +1,38 @@
-## DataSense 1.0.0
+# DataSense 2.2.0 — Trusted Analytics
 
-First commercial-grade release of DataSense — a desktop data analysis studio for Windows.
+DataSense 2.2.0 adds **Trust Center**, a local-first governance workspace that helps analysts establish whether a dataset is fit for reporting, modelling or sharing. This release also repairs project persistence and workspace-refresh defects found during desktop startup validation.
 
-### Downloads
+## Downloads
+
 | File | Use it for |
-| --- | --- |
-| `DataSense-1.0.0-setup.exe` | Recommended installer (Start menu + desktop shortcut, uninstaller) |
-| `DataSense-1.0.0-windows-x64-portable.zip` | Portable build — unzip and run `DataSense.exe`, no installation |
+|---|---|
+| `DataSense-2.2.0-setup.exe` | Recommended installer with Start-menu shortcut, optional desktop shortcut and uninstaller. |
+| `DataSense-2.2.0-windows-x64-portable.zip` | Portable bundle; unzip it and run `DataSense.exe` without installation. |
+| `DataSense.exe` | Standalone executable from the packaged bundle for controlled deployment tooling. |
 
-### What's inside
-- **Data workspace** — import CSV, TSV, Excel, JSON, Parquet and SQLite; KPI overview, virtualised preview of large tables and a per-column quality profile (types, missing %, uniqueness, spread).
-- **Prepare workspace** — fill or drop missing values, deduplicate, convert types, standardise/min-max scale, IQR outlier removal, computed columns, pandas-query filtering, group-by aggregation and pivot tables, all with full undo/redo history.
-- **Statistics workspace** — descriptive statistics, Pearson/Spearman/Kendall correlation matrices, frequency tables, Shapiro-Wilk normality, two-sample and paired t-tests, one-way ANOVA, chi-square independence and OLS regression, each with a plain-language interpretation.
-- **Visualise workspace** — ten chart types (line, area, bar, horizontal bar, scatter with trend line, histogram, box, violin, pie, correlation heatmap) with themed rendering, zoom/pan toolbar and PNG/SVG/PDF export.
-- **Machine learning workspace** — regression and classification (linear/ridge/logistic, decision tree, random forest, gradient boosting, SVM) with train/test split, cross-validated scores, feature importance and confusion matrices, plus K-Means clustering and PCA; training runs off the UI thread.
-- **Reporting & projects** — one-click styled HTML report of the session, `.dsproj` project files that store the dataset with its processing history, and dataset export to CSV/Excel/JSON/Parquet.
-- **Polished UI** — custom dark and light design system, keyboard shortcuts, recent files, live status bar and a signed version-stamped executable.
+Windows 10 or Windows 11, 64-bit, is required. Python is bundled and is not required on the user’s computer.
 
-### Requirements
-Windows 10 or 11 (64-bit). No Python installation required.
+## Trust Center
+
+Trust Center does not transmit the active dataset. It provides a local sensitive-data scan that identifies likely email addresses, telephone numbers, IP addresses and payment-card patterns without retaining detected values. Findings are signals for review, not a legal classification or automated access-control decision.
+
+Data contracts let an analyst define repeatable acceptance criteria. The initial rule set supports populated-value, uniqueness, numeric range, allowed-value, regular-expression and timestamp-freshness controls. Every rule has an explicit severity, and recommended rules are visible and editable before use. Running a check produces a weighted quality score together with `Trusted`, `Needs attention`, `Blocked`, or `Not configured` status. A data mutation invalidates the prior result automatically so stale evidence is never presented as current.
+
+| Output | Purpose |
+|---|---|
+| Trust Center table | Review each control, observed condition, expectation, violations and error state. |
+| JSON audit evidence | Attach deterministic, portable validation evidence to an approval process, ticket or archive. |
+| Styled HTML analysis report | Includes the current Trust Center summary and control results when checks were run. |
+| `.dsproj` project | Preserves the contract definition; DataSense intentionally asks the user to rerun validation after restoring a project. |
+
+## Included platform capabilities
+
+DataSense remains a full desktop studio for data import, quality profiling, preparation, statistics, visualisation, SQL analysis, time series, machine learning, AutoML, dashboards, local project files and styled reports. The release pipeline builds the Windows x64 bundle, portable archive and installer from the tagged source revision; it also runs regression tests before publishing release assets.
+
+## Validation performed
+
+The release candidate passed the complete automated suite, including dedicated contract, sensitive-data scanning, project persistence and off-screen desktop startup coverage. The PyInstaller recipe was additionally exercised in a Linux validation environment; Windows release artifacts are built only by the dedicated `windows-latest` GitHub Actions pipeline.
+
+## Upgrade note
+
+Open existing projects normally. Their datasets and earlier analysis features are preserved. Existing projects do not contain a data contract until one is created in Trust Center.

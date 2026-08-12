@@ -3,6 +3,19 @@
 All notable changes to DataSense are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] - 2026-08-12
+
+### Added
+- **Trust Center:** local sensitive-data classification for email, phone, IP address and payment-card patterns without retaining detected values.
+- **Data contracts:** portable, reviewable rules for populated values, uniqueness, ranges, allowed values, regex compliance and timestamp freshness.
+- **Audit evidence:** weighted quality score, clear trust states, JSON audit export and report integration.
+- **Project governance:** `.dsproj` files now retain their data contract, while quality reports are deliberately re-run on restore.
+- **Quality assurance:** governance-unit coverage and an off-screen desktop startup test.
+
+### Fixed
+- Restored project saving and eliminated stale `DataManager` API calls that prevented several desktop workspaces from opening.
+- A data mutation now marks any prior validation result as stale instead of presenting it as current.
+
 ## [1.0.0] - 2026-08-06
 
 ### Added
