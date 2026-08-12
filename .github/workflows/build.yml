@@ -1,38 +1,83 @@
-name: Build and Release DataSense
+name: Build and release DataSense for Windows
 
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  build:
+  package-windows:
+    name: Package Windows x64
     runs-on: windows-latest
-    permissions:
-      contents: write
+
     steps:
-      - name: Checkout code
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
+          cache: pip
 
-      - name: Install dependencies
+      - name: Read product version
+        shell: pwsh
+        run: |
+          $match = Select-String -Path core/version.py -Pattern 'APP_VERSION\s*=\s*"([^"]+)"'
+          if (-not $match.Matches.Count) { throw "APP_VERSION was not found in core/version.py" }
+          $version = $match.Matches[0].Groups[1].Value
+          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Install product and packaging dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install PyQt6 pandas numpy matplotlib seaborn scikit-learn pyinstaller qt-material openpyxl
+          pip install -r requirements.txt
+          pip install pyinstaller
 
-      - name: Build EXE
+      - name: Run regression suite
+        run: pytest -q
+
+      - name: Build DataSense bundle
+        run: pyinstaller --noconfirm --clean DataSense.spec
+
+      - name: Create portable archive
+        shell: pwsh
         run: |
-          pyinstaller --noconfirm --onefile --windowed --name DataSense --add-data "ui;ui" --add-data "core;core" main.py
+          Compress-Archive -Path dist\DataSense\* -DestinationPath "dist\DataSense-$env:APP_VERSION-windows-x64-portable.zip" -Force
 
-      - name: Create Release
-        id: create_release
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+
+      - name: Create signed-ready installer
+        shell: pwsh
+        run: |
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $compiler)) { throw "Inno Setup compiler was not installed." }
+          & $compiler "/DAppVersion=$env:APP_VERSION" installer\DataSense.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Move-Item "installer\output\DataSense-$env:APP_VERSION-setup.exe" "dist\DataSense-$env:APP_VERSION-setup.exe" -Force
+
+      - name: Publish build artifacts
+        uses: actions/upload-artifact@v4
         with:
-          files: dist/DataSense.exe
-          token: ${{ secrets.GH_TOKEN }}
+          name: DataSense-${{ env.APP_VERSION }}-windows-x64
+          if-no-files-found: error
+          path: |
+            dist/DataSense-${{ env.APP_VERSION }}-setup.exe
+            dist/DataSense-${{ env.APP_VERSION }}-windows-x64-portable.zip
+            dist/DataSense/DataSense.exe
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/DataSense-${{ env.APP_VERSION }}-setup.exe
+            dist/DataSense-${{ env.APP_VERSION }}-windows-x64-portable.zip
+            dist/DataSense/DataSense.exe
