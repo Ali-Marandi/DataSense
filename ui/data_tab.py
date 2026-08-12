@@ -137,7 +137,7 @@ class DataTab(QWidget):
         self.profile_model.set_frame(self.manager.profile())
         self.cards["rows"].set_value(f"{len(df):,}")
         self.cards["cols"].set_value(str(df.shape[1]))
-        self.cards["numeric"].set_value(str(len(self.manager.numeric_columns())))
+        self.cards["numeric"].set_value(str(len(self.manager.numeric_columns)))
         self.cards["missing"].set_value(f"{int(df.isna().sum().sum()):,}")
         self.cards["dupes"].set_value(f"{int(df.duplicated().sum()):,}")
         self.cards["memory"].set_value(f"{self.manager.memory_usage_mb():.2f} MB")

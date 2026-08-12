@@ -327,7 +327,7 @@ class TransformTab(QWidget):
     def refresh(self) -> None:
         selected = set(self._selected())
         self.column_list.clear()
-        columns = self.manager.columns()
+        columns = self.manager.columns
         self.column_list.addItems(columns)
         for index in range(self.column_list.count()):
             item = self.column_list.item(index)
@@ -336,7 +336,7 @@ class TransformTab(QWidget):
         for combo, values in (
             (self.group_by, columns),
             (self.pivot_columns, columns),
-            (self.group_target, self.manager.numeric_columns() or columns),
+            (self.group_target, self.manager.numeric_columns or columns),
         ):
             current = combo.currentText()
             combo.clear()

@@ -140,7 +140,7 @@ class AnalysisTab(QWidget):
             return
         df = self.manager.df
         test = self.test_combo.currentText()
-        selection = self._selected() or self.manager.numeric_columns()
+        selection = self._selected() or self.manager.numeric_columns
         primary = self.primary.currentText()
         secondary = self.secondary.currentText()
         try:
@@ -207,8 +207,8 @@ class AnalysisTab(QWidget):
             QMessageBox.warning(self, "Analysis failed", str(exc))
 
     def refresh(self) -> None:
-        columns = self.manager.columns()
-        numeric = self.manager.numeric_columns()
+        columns = self.manager.columns
+        numeric = self.manager.numeric_columns
         selected = set(self._selected())
         self.column_list.clear()
         self.column_list.addItems(numeric or columns)

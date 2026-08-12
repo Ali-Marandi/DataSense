@@ -37,6 +37,7 @@ from ui.overview_tab import OverviewTab
 from ui.sql_tab import SQLTab
 from ui.timeseries_tab import TimeSeriesTab
 from ui.dashboard_tab import DashboardTab
+from ui.trust_center_tab import TrustCenterTab
 from core.dashboard import build_dashboard
 from ui.theme import stylesheet
 
@@ -91,6 +92,7 @@ class MainWindow(QMainWindow):
         self.ai_assistant_tab = AIAssistantTab(self.manager)
         self.security_tab = SecurityTab(self.manager)
         self.streaming_tab = StreamingTab(self.manager)
+        self.trust_center_tab = TrustCenterTab(self.manager)
 
         self.tabs.addTab(self.overview_tab, "Overview")
         self.tabs.addTab(self.data_tab, "Data")
@@ -105,6 +107,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.automl_tab, "AutoML (AI)")
         self.tabs.addTab(self.ai_assistant_tab, "AI Assistant")
         self.tabs.addTab(self.security_tab, "Security & Versions")
+        self.tabs.addTab(self.trust_center_tab, "Trust Center")
         self.tabs.addTab(self.streaming_tab, "Live Streaming")
         self.tabs.addTab(self.dashboard_tab, "Dashboards")
         self.tabs.addTab(self.report_tab, "Report Generator")
@@ -300,6 +303,9 @@ class MainWindow(QMainWindow):
             },
         )
         report.add_table("Column quality profile", self.manager.profile())
+        if self.manager.governance_report is not None:
+            report.add_metrics("Trust Center summary", self.manager.governance_report.summary())
+            report.add_table("Data contract results", self.manager.governance_report.to_frame())
         report.add_table("Data sample", df.head(25))
         for title, frame in self.analysis_log:
             if frame is not None and not frame.empty:
@@ -394,6 +400,7 @@ class MainWindow(QMainWindow):
         for tab in (
             self.overview_tab, self.data_tab, self.transform_tab, self.analysis_tab,
             self.viz_tab, self.ml_tab, self.sql_tab, self.timeseries_tab, self.dashboard_tab,
+            self.trust_center_tab,
         ):
             tab.refresh()
         self.act_undo.setEnabled(self.manager.can_undo)

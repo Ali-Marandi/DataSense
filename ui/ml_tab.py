@@ -224,8 +224,8 @@ class MLTab(QWidget):
         self.window().statusBar().showMessage("Model output appended to the dataset", 6000)
 
     def refresh(self) -> None:
-        columns = self.manager.columns()
-        numeric = self.manager.numeric_columns()
+        columns = self.manager.columns
+        numeric = self.manager.numeric_columns
         selected = set(self._features())
         self.feature_list.clear()
         self.feature_list.addItems(columns)

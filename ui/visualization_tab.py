@@ -114,7 +114,7 @@ class VisualizationTab(QWidget):
         ax = self.canvas.axes()
         try:
             if chart == "Correlation heatmap":
-                numeric = df[self.manager.numeric_columns()].apply(
+                numeric = df[self.manager.numeric_columns].apply(
                     pd.to_numeric, errors="coerce"
                 )
                 matrix = numeric.corr()
@@ -237,12 +237,12 @@ class VisualizationTab(QWidget):
         self.canvas.apply_theme(dark)
 
     def refresh(self) -> None:
-        columns = self.manager.columns()
-        numeric = self.manager.numeric_columns()
+        columns = self.manager.columns
+        numeric = self.manager.numeric_columns
         for combo, values in (
             (self.x_combo, columns),
             (self.y_combo, numeric or columns),
-            (self.group_combo, ["(none)"] + self.manager.categorical_columns()),
+            (self.group_combo, ["(none)"] + self.manager.categorical_columns),
         ):
             current = combo.currentText()
             combo.clear()
