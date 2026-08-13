@@ -119,10 +119,10 @@ git push -u origin release/schema-drift-guard
 
 سپس در GitHub یک Pull Request از `release/schema-drift-guard` به `main` بسازید. متن پیشنهادی PR:
 
-> **Title:** Add Schema Drift Guard and stabilize headless PyQt tests  
-> **Summary:** Adds privacy-preserving schema snapshots, compatibility policies, project persistence, Trust Center controls, technical documentation and a repository-wide offscreen Qt test bootstrap.  
-> **Validation:** `79 passed, 2 warnings`; JUnit evidence and validation report included.  
-> **Risk:** UI additions are additive; schema policy defaults accept added columns and block removal/type/nullability relaxation.  
+> **Title:** Add Schema Drift Guard and stabilize headless PyQt tests
+> **Summary:** Adds privacy-preserving schema snapshots, compatibility policies, project persistence, Trust Center controls, technical documentation and a repository-wide offscreen Qt test bootstrap.
+> **Validation:** `79 passed, 2 warnings`; JUnit evidence and validation report included.
+> **Risk:** UI additions are additive; schema policy defaults accept added columns and block removal/type/nullability relaxation.
 > **Rollback:** Revert commit `c1390ba` after confirming no downstream project requires its baseline/policy manifest fields.
 
 پس از review، CI و approvalهای لازم، PR را merge کنید. برای branch protection، این روش از bypass کردن کنترل‌های سازمانی جلوگیری می‌کند.

@@ -1,7 +1,7 @@
 # گزارش اعتبارسنجی DataSense
 
-**تاریخ اجرا:** ۱۳ اوت ۲۰۲۶  
-**محیط:** Ubuntu sandbox، Python 3.12، PyQt6، pytest  
+**تاریخ اجرا:** ۱۳ اوت ۲۰۲۶
+**محیط:** Ubuntu sandbox، Python 3.12، PyQt6، pytest
 **Commit مبنا:** `4f45e79` به‌علاوهٔ اصلاح bootstrap headless PyQt در این تغییرات
 
 ## نتیجهٔ اجرایی

@@ -70,4 +70,4 @@ Quality Gate مستقل از Schema Drift Guard است. Quality Gate کیفیت 
 
 ## تفسیر عملی نتیجه
 
-نتیجهٔ ۷۹ passed یک evidence قوی از regression suite فعلی است، اما معادل «تأیید production به تنهایی» نیست. انتشار production همچنان به Windows smoke روی artifact، code signing، dependency/security scan، release approval، monitoring، rollback plan و در بخش هویت، integration test با IdP staging نیاز دارد. 
+نتیجهٔ ۷۹ passed یک evidence قوی از regression suite فعلی است، اما معادل «تأیید production به تنهایی» نیست. انتشار production همچنان به Windows smoke روی artifact، code signing، dependency/security scan، release approval، monitoring، rollback plan و در بخش هویت، integration test با IdP staging نیاز دارد.
