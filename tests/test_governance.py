@@ -198,3 +198,26 @@ def test_schema_drift_policy_can_reject_additive_columns_and_persists_with_proje
     assert restored.schema_baseline is not None
     assert restored.schema_drift_policy.name == "Strict schema"
     assert restored.check_schema_drift().decision == "blocked"
+
+
+def test_lineage_records_schema_only_transformations_and_project_persistence(tmp_path):
+    manager = DataManager(df=pd.DataFrame({"email": ["alice@example.com", "bob@example.com"], "amount": [1, 2]}), source="memory")
+    manager.rename_column("amount", "revenue")
+    manager.cast_column("revenue", "numeric")
+
+    assert len(manager.lineage.events) == 2
+    renamed = manager.lineage.events[0]
+    assert renamed.added_columns == ("revenue",)
+    assert renamed.removed_columns == ("amount",)
+    evidence = str(manager.lineage.to_dict())
+    assert "alice@example.com" not in evidence
+    assert "bob@example.com" not in evidence
+
+    path = tmp_path / "lineage.dsproj"
+    assert save_project(manager, str(path))[0]
+    restored = DataManager()
+    assert load_project(restored, str(path))[0]
+    assert [event.operation for event in restored.lineage.events] == [
+        "Renamed amount -> revenue",
+        "Cast revenue to numeric",
+    ]

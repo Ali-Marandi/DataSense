@@ -14,6 +14,7 @@ from typing import Any, Iterable
 import numpy as np
 import pandas as pd
 
+from .lineage import LineageTrail
 from .governance import (
     DataContract,
     QualityGatePolicy,
@@ -82,6 +83,7 @@ class DataManager:
     quality_history: QualityHistory = field(default_factory=QualityHistory)
     schema_baseline: SchemaSnapshot | None = None
     schema_drift_policy: SchemaDriftPolicy = field(default_factory=SchemaDriftPolicy)
+    lineage: LineageTrail = field(default_factory=LineageTrail)
 
     # ------------------------------------------------------------- properties
     @property
@@ -167,6 +169,8 @@ class DataManager:
         self.quality_history = QualityHistory()
         self.schema_baseline = None
         self.schema_drift_policy = SchemaDriftPolicy()
+        self.lineage = LineageTrail()
+        self.lineage.record("Imported dataset", None, self.df, source=path)
         return True, f"Loaded {len(self.df):,} rows x {self.df.shape[1]} columns"
 
     def _read_delimited(self, path: str, ext: str, options: dict[str, Any]) -> pd.DataFrame:
@@ -218,7 +222,9 @@ class DataManager:
 
     # ------------------------------------------------------------ mutations
     def set_frame(self, frame: pd.DataFrame, label: str) -> None:
+        before = self.df.copy() if self.df is not None else None
         self.df = frame.reset_index(drop=True)
+        self.lineage.record(label, before, self.df, source=self.source)
         self.history.append(HistoryStep(label, self.df.copy()))
         self.history = self.history[-50:]
         self._redo.clear()
@@ -229,16 +235,20 @@ class DataManager:
         if not self.can_undo:
             return None
         step = self.history.pop()
+        before = self.df.copy() if self.df is not None else None
         self._redo.append(step)
         self.df = self.history[-1].frame.copy()
+        self.lineage.record(f"Undo: {step.label}", before, self.df, source=self.source)
         return step.label
 
     def redo(self) -> str | None:
         if not self._redo:
             return None
         step = self._redo.pop()
+        before = self.df.copy() if self.df is not None else None
         self.history.append(step)
         self.df = step.frame.copy()
+        self.lineage.record(f"Redo: {step.label}", before, self.df, source=self.source)
         return step.label
 
     def _require(self) -> pd.DataFrame:

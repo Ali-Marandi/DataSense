@@ -7,6 +7,7 @@ import zipfile
 import pandas as pd
 
 from .data_manager import DataManager, HistoryStep
+from .lineage import LineageTrail
 from .governance import DataContract, QualityGatePolicy, QualityHistory, SchemaDriftPolicy, SchemaSnapshot
 from .version import APP_VERSION
 
@@ -33,6 +34,7 @@ def save_project(manager: DataManager, path: str) -> tuple[bool, str]:
                         "quality_history": manager.quality_history.to_dict(),
                         "schema_baseline": manager.schema_baseline.to_dict() if manager.schema_baseline else None,
                         "schema_drift_policy": manager.schema_drift_policy.to_dict(),
+                        "lineage": manager.lineage.to_dict(),
                     },
                     indent=2,
                 ),
@@ -58,5 +60,6 @@ def load_project(manager: DataManager, path: str) -> tuple[bool, str]:
     manager.quality_history = QualityHistory.from_dict(manifest.get("quality_history"))
     manager.schema_baseline = SchemaSnapshot.from_dict(manifest.get("schema_baseline"))
     manager.schema_drift_policy = SchemaDriftPolicy.from_dict(manifest.get("schema_drift_policy"))
+    manager.lineage = LineageTrail.from_dict(manifest.get("lineage"))
     manager.governance_report = None
     return True, f"Project restored ({len(frame):,} rows)"

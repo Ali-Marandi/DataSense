@@ -77,10 +77,14 @@ class TrustCenterTab(QWidget):
         self.schema_baseline_button.clicked.connect(self.approve_schema_baseline)
         self.schema_check_button = QPushButton("Check schema drift")
         self.schema_check_button.clicked.connect(self.check_schema_drift)
+        self.lineage_button = QPushButton("View lineage")
+        self.lineage_button.setToolTip("Review privacy-preserving transformation history for this project.")
+        self.lineage_button.clicked.connect(self.show_lineage)
         header.addWidget(self.scan_button)
         header.addWidget(self.run_button)
         header.addWidget(self.schema_baseline_button)
         header.addWidget(self.schema_check_button)
+        header.addWidget(self.lineage_button)
         root.addLayout(header)
 
         self.summary_grid = QGridLayout()
@@ -294,6 +298,27 @@ class TrustCenterTab(QWidget):
         else:
             QMessageBox.information(self, "Schema drift check", message)
 
+    def show_lineage(self) -> None:
+        events = self.manager.lineage.events
+        if not events:
+            QMessageBox.information(self, "Transformation lineage", "No lineage events are available for this project yet.")
+            return
+        lines: list[str] = []
+        for event in events[-15:]:
+            changes: list[str] = []
+            if event.added_columns:
+                changes.append(f"added: {', '.join(event.added_columns)}")
+            if event.removed_columns:
+                changes.append(f"removed: {', '.join(event.removed_columns)}")
+            if event.dtype_changes:
+                changes.append(f"types: {', '.join(event.dtype_changes)}")
+            summary = "; ".join(changes) if changes else "schema unchanged"
+            lines.append(
+                f"#{event.sequence} — {event.operation}\n"
+                f"{event.occurred_at} | rows {event.input_rows if event.input_rows is not None else '—'} → {event.output_rows if event.output_rows is not None else '—'} | {summary}"
+            )
+        QMessageBox.information(self, "Transformation lineage", "\n\n".join(lines))
+
     def export_audit(self) -> None:
         report = self.manager.governance_report
         if report is None:
@@ -316,6 +341,7 @@ class TrustCenterTab(QWidget):
                 "schema_baseline": self.manager.schema_baseline.to_dict() if self.manager.schema_baseline else None,
                 "schema_drift_policy": self.manager.schema_drift_policy.to_dict(),
                 "schema_drift_report": self.manager.check_schema_drift().to_dict(),
+                "lineage": self.manager.lineage.to_dict(),
             }
             with open(path, "w", encoding="utf-8") as handle:
                 json.dump(evidence, handle, ensure_ascii=False, indent=2)
@@ -364,6 +390,7 @@ class TrustCenterTab(QWidget):
         self.run_button.setEnabled(has_data)
         self.schema_baseline_button.setEnabled(has_data)
         self.schema_check_button.setEnabled(has_data)
+        self.lineage_button.setEnabled(has_data)
         self.recommend_button.setEnabled(has_data)
         self.add_rule_button.setEnabled(has_data)
         self.rule_column.clear()
