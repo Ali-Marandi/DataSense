@@ -1,0 +1,21 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: datasense-control-plane
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: datasense-control-plane
+      app.kubernetes.io/role: api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: datasense-outbox-worker
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: datasense-control-plane
+      app.kubernetes.io/role: outbox-worker

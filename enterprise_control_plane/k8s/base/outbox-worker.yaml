@@ -1,0 +1,106 @@
+# Template for the planned app.outbox_worker module. Do not deploy until migrations,
+# notifier integration, lease recovery and worker health endpoints are implemented.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: datasense-outbox-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: datasense-control-plane
+      app.kubernetes.io/role: outbox-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: datasense-control-plane
+        app.kubernetes.io/role: outbox-worker
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: datasense-control-plane
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: registry.example.invalid/datasense/control-plane:REPLACE_WITH_DIGEST
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "app.outbox_worker"]
+          envFrom:
+            - configMapRef:
+                name: datasense-control-plane-config
+            - secretRef:
+                name: datasense-control-plane-secrets
+          env:
+            - name: WORKER_METRICS_PORT
+              value: "9090"
+            - name: WORKER_IDENTITY
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          ports:
+            - name: metrics
+              containerPort: 9090
+          resources:
+            requests:
+              cpu: 200m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: metrics
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: metrics
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: metrics
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "kill -TERM 1; sleep 10"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: datasense-outbox-worker-metrics
+  labels:
+    app.kubernetes.io/name: datasense-control-plane
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: datasense-control-plane
+    app.kubernetes.io/role: outbox-worker
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: metrics

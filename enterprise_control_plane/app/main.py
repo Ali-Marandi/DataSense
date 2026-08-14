@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from time import perf_counter
+from typing import Awaitable, Callable
 from urllib.parse import urlencode
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from .auth import AuthorizationCodeService, TokenService
+from .metrics import HTTP_DURATION_SECONDS, HTTP_REQUESTS
 from .models import Permission, ResourceRef
 from .rbac import AuditSink, PermissionMiddleware, PermissionService, require_permission
 from .saml import SamlSecurityError, SamlServiceProvider
@@ -20,15 +24,41 @@ class ControlPlaneComponents:
     token_service: TokenService
     permission_service: PermissionService
     audit_sink: AuditSink
+    ready_check: Callable[[], Awaitable[bool]] | None = None
 
 
 def create_app(components: ControlPlaneComponents) -> FastAPI:
     app = FastAPI(title="DataSense Enterprise Control Plane", docs_url=None, redoc_url=None)
     app.add_middleware(PermissionMiddleware, token_verifier=components.token_service, audit_sink=components.audit_sink)
 
+    @app.middleware("http")
+    async def record_metrics(request: Request, call_next):
+        started = perf_counter()
+        response: Response | None = None
+        try:
+            response = await call_next(request)
+            return response
+        finally:
+            # Route templates avoid high-cardinality labels such as dataset UUIDs.
+            route = request.scope.get("route")
+            route_label = getattr(route, "path", "unmatched")
+            status_code = str(response.status_code) if response is not None else "500"
+            HTTP_REQUESTS.labels(request.method, route_label, status_code).inc()
+            HTTP_DURATION_SECONDS.labels(request.method, route_label).observe(perf_counter() - started)
+
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics() -> Response:
+        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
     @app.get("/health/live", include_in_schema=False)
     async def live() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/health/ready", include_in_schema=False)
+    async def ready() -> dict[str, str]:
+        if components.ready_check is None or await components.ready_check():
+            return {"status": "ready"}
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="dependencies unavailable")
 
     @app.get("/v1/auth/saml/{organization_slug}/start", include_in_schema=False)
     async def saml_start(organization_slug: str, pkce_challenge: str, return_uri: str) -> RedirectResponse:

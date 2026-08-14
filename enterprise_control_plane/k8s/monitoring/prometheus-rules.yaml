@@ -1,0 +1,99 @@
+# Requires Prometheus Operator. Thresholds are staging defaults and must be calibrated
+# from approved SLOs and workload baselines before production enablement.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: datasense-control-plane
+  namespace: datasense-control-plane
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: datasense.control-plane.recording
+      interval: 30s
+      rules:
+        - record: datasense:control_plane_http_error_ratio:5m
+          expr: |
+            sum(rate(datasense_control_plane_http_requests_total{status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(datasense_control_plane_http_requests_total[5m])), 1)
+        - record: datasense:outbox_oldest_pending_age_seconds
+          expr: max(datasense_outbox_oldest_pending_age_seconds)
+    - name: datasense.control-plane.alerts
+      rules:
+        - alert: DataSenseControlPlaneUnavailable
+          expr: up{namespace="datasense-control-plane",service="datasense-control-plane"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            service: control-plane
+          annotations:
+            summary: "DataSense Control Plane is unavailable"
+            runbook_url: "https://github.com/Ali-Marandi/DataSense/blob/main/DATASENSE_PRODUCTION_RELEASE_RUNBOOK_FA.md"
+            description: "Prometheus cannot scrape the API service for two minutes. Verify pods, Service endpoints, NetworkPolicy and readiness."
+        - alert: DataSenseControlPlaneHigh5xxRate
+          expr: datasense:control_plane_http_error_ratio:5m > 0.02
+          for: 10m
+          labels:
+            severity: warning
+            service: control-plane
+          annotations:
+            summary: "DataSense Control Plane 5xx ratio exceeds 2%"
+            description: "Inspect traces and dependency health. Do not disable readiness to hide backend outages."
+        - alert: DataSenseControlPlaneHighLatency
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(datasense_control_plane_http_request_duration_seconds_bucket[5m]))
+            ) > 1
+          for: 10m
+          labels:
+            severity: warning
+            service: control-plane
+          annotations:
+            summary: "DataSense Control Plane p95 latency exceeds the staging default"
+            description: "Calibrate the one-second threshold with the approved production SLO before enabling paging."
+        - alert: DataSenseQualityGateBlocksSurging
+          expr: sum(rate(datasense_quality_gate_decisions_total{decision="blocked"}[15m])) > 0.2
+          for: 15m
+          labels:
+            severity: warning
+            service: governance
+          annotations:
+            summary: "Quality Gate blocking rate is elevated"
+            description: "Review contract/policy change, upstream freshness, schema drift and customer impact. This alert does not change or override data."
+        - alert: DataSenseOutboxBacklogGrowing
+          expr: datasense_outbox_pending_events > 100
+          for: 10m
+          labels:
+            severity: warning
+            service: outbox
+          annotations:
+            summary: "DataSense outbox queue depth exceeds staging baseline"
+            description: "Check worker availability, provider status, database lock waits and scaling. Calibrate 100 against actual workload."
+        - alert: DataSenseOutboxOldestEventLate
+          expr: datasense:outbox_oldest_pending_age_seconds > 300
+          for: 5m
+          labels:
+            severity: critical
+            service: outbox
+          annotations:
+            summary: "Oldest DataSense outbox event exceeded five minutes"
+            description: "Investigate worker health, circuit breaker state, provider outage and pending event priority."
+        - alert: DataSenseOutboxDeadLetterEvent
+          expr: datasense_outbox_dead_events > 0
+          for: 1m
+          labels:
+            severity: critical
+            service: outbox
+          annotations:
+            summary: "DataSense outbox contains dead-letter events"
+            description: "Triage error code and payload-safety status; redrive only with authorized ticket and audit evidence."
+        - alert: DataSenseOutboxLeaseRecoveryLoop
+          expr: sum(increase(datasense_outbox_lease_recoveries_total[15m])) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: outbox
+          annotations:
+            summary: "Repeated outbox lease recovery detected"
+            description: "Worker crash, long provider call or insufficient lease duration may be causing recurring recovery."

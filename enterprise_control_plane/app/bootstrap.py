@@ -37,6 +37,7 @@ app = create_app(ControlPlaneComponents(
     token_service=tokens,
     permission_service=permission_service,
     audit_sink=repository,
+    ready_check=repository.ready,
 ))
 
 

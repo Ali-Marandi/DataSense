@@ -1,0 +1,83 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "targets": [{"expr": "sum(rate(datasense_control_plane_http_requests_total{namespace=\"$namespace\"}[5m]))", "legendFormat": "requests/s", "refId": "A"}],
+      "title": "Control Plane request rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(datasense_control_plane_http_request_duration_seconds_bucket{namespace=\"$namespace\"}[5m])))", "legendFormat": "p95", "refId": "A"}],
+      "title": "Control Plane p95 latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8},
+      "id": 3,
+      "targets": [{"expr": "sum(rate(datasense_control_plane_http_requests_total{namespace=\"$namespace\",status=~\"5..\"}[5m])) / clamp_min(sum(rate(datasense_control_plane_http_requests_total{namespace=\"$namespace\"}[5m])), 1)", "legendFormat": "5xx ratio", "refId": "A"}],
+      "title": "API error ratio",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8},
+      "id": 4,
+      "targets": [{"expr": "sum by (decision) (rate(datasense_quality_gate_decisions_total{namespace=\"$namespace\"}[5m]))", "legendFormat": "{{decision}}", "refId": "A"}],
+      "title": "Quality Gate decisions / second",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8},
+      "id": 5,
+      "targets": [{"expr": "max(datasense_outbox_pending_events{namespace=\"$namespace\"})", "legendFormat": "pending", "refId": "A"}, {"expr": "max(datasense_outbox_dead_events{namespace=\"$namespace\"})", "legendFormat": "dead", "refId": "B"}],
+      "title": "Outbox queue depth and dead-letter count",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "id": 6,
+      "targets": [{"expr": "max(datasense_outbox_oldest_pending_age_seconds{namespace=\"$namespace\"})", "legendFormat": "oldest pending age", "refId": "A"}],
+      "title": "Outbox oldest pending event age",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "id": 7,
+      "targets": [{"expr": "sum by (outcome) (rate(datasense_outbox_delivery_attempts_total{namespace=\"$namespace\"}[5m]))", "legendFormat": "{{outcome}}", "refId": "A"}, {"expr": "sum(increase(datasense_outbox_lease_recoveries_total{namespace=\"$namespace\"}[15m]))", "legendFormat": "lease recoveries / 15m", "refId": "B"}],
+      "title": "Outbox delivery outcomes and lease recovery",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["datasense", "control-plane", "outbox"],
+  "templating": {"list": [{"current": {"selected": true, "text": "datasense-control-plane", "value": "datasense-control-plane"}, "hide": 0, "label": "Namespace", "name": "namespace", "options": [], "query": "label_values(kube_pod_info, namespace)", "refresh": 1, "type": "query", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}]},
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "DataSense Control Plane and Outbox",
+  "uid": "datasense-control-plane-outbox",
+  "version": 1
+}

@@ -22,6 +22,16 @@ class PostgresEnterpriseRepository:
     async def close(self) -> None:
         await self.pool.close()
 
+    async def ready(self) -> bool:
+        """Return false rather than leaking backend errors through a readiness probe."""
+        try:
+            async with self.pool.connection() as conn, conn.cursor() as cursor:
+                await cursor.execute("SELECT 1")
+                await cursor.fetchone()
+            return True
+        except Exception:
+            return False
+
     async def get_enabled_by_slug(self, slug: str) -> SamlConnection | None:
         query = """
           SELECT o.id::text AS organization_id, o.slug, sc.idp_entity_id, sc.idp_sso_url,

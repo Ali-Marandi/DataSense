@@ -1,0 +1,110 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: datasense-control-plane-config
+data:
+  APP_ENV: production
+  LOG_LEVEL: INFO
+  OUTBOX_POLL_INTERVAL_SECONDS: "2"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: datasense-control-plane
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: datasense-control-plane
+      app.kubernetes.io/role: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: datasense-control-plane
+        app.kubernetes.io/role: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: datasense-control-plane
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: registry.example.invalid/datasense/control-plane:REPLACE_WITH_DIGEST
+          imagePullPolicy: IfNotPresent
+          command:
+            - uvicorn
+            - app.bootstrap:app
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8080"
+            - --proxy-headers
+            - --forwarded-allow-ips=10.0.0.0/8,192.168.0.0/16
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: datasense-control-plane-config
+            - secretRef:
+                name: datasense-control-plane-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: datasense-control-plane
+  labels:
+    app.kubernetes.io/name: datasense-control-plane
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: datasense-control-plane
+    app.kubernetes.io/role: api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
