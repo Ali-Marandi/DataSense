@@ -1,0 +1,84 @@
+name: Promote Control Plane to Kubernetes
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_ref:
+        description: "Immutable image reference, for example ghcr.io/owner/image@sha256:..."
+        required: true
+        type: string
+      environment:
+        description: "GitHub Environment holding cluster approval and KUBECONFIG_B64"
+        required: true
+        default: staging
+        type: choice
+        options: [staging, production]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: datasense-control-plane-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Promote verified API baseline
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+      IMAGE_REF: ${{ inputs.image_ref }}
+    steps:
+      - name: Checkout approved source revision
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.30.0
+
+      - name: Require immutable image digest and cluster credential
+        run: |
+          test -n "$KUBECONFIG_B64"
+          case "$IMAGE_REF" in
+            *@sha256:*) ;;
+            *) echo "image_ref must be an immutable digest"; exit 1 ;;
+          esac
+          echo "$KUBECONFIG_B64" | base64 --decode > "$RUNNER_TEMP/kubeconfig"
+          chmod 600 "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Render environment promotion manifest
+        run: |
+          case "${{ inputs.environment }}" in
+            staging) TARGET_NAMESPACE=datasense-control-plane-staging ;;
+            production) TARGET_NAMESPACE=datasense-control-plane ;;
+            *) echo "unsupported environment"; exit 1 ;;
+          esac
+          echo "TARGET_NAMESPACE=$TARGET_NAMESPACE" >> "$GITHUB_ENV"
+          kubectl kustomize "enterprise_control_plane/k8s/overlays/${{ inputs.environment }}" > rendered-kubernetes.yaml
+          sed -i "s|ghcr.io/ali-marandi/datasense-control-plane:REPLACE_WITH_IMMUTABLE_DIGEST|$IMAGE_REF|g" rendered-kubernetes.yaml
+          ! grep -q 'REPLACE_WITH_' rendered-kubernetes.yaml
+          # The approved overlay already pins worker replicas to zero. Its activation
+          # is a separately reviewed change after outbox acceptance evidence exists.
+
+      - name: Server-side dry run and diff
+        run: |
+          kubectl apply --server-side --dry-run=server --field-manager=datasense-cicd -f rendered-kubernetes.yaml
+          set +e
+          kubectl diff --server-side --field-manager=datasense-cicd -f rendered-kubernetes.yaml
+          rc=$?
+          set -e
+          test "$rc" -le 1
+
+      - name: Apply and verify API rollout
+        run: |
+          kubectl apply --server-side --field-manager=datasense-cicd -f rendered-kubernetes.yaml
+          kubectl -n "$TARGET_NAMESPACE" rollout status deployment/datasense-control-plane --timeout=5m
+          kubectl -n "$TARGET_NAMESPACE" get pods,svc,hpa,pdb
+
+      - name: Post-deployment probe
+        run: |
+          kubectl -n "$TARGET_NAMESPACE" wait --for=condition=ready pod -l app.kubernetes.io/role=api --timeout=3m
+          kubectl -n "$TARGET_NAMESPACE" get endpointslice -l kubernetes.io/service-name=datasense-control-plane

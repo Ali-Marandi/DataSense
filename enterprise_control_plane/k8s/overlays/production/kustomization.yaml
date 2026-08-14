@@ -1,0 +1,37 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: datasense-control-plane
+resources:
+  - ../../base
+images:
+  - name: registry.example.invalid/datasense/control-plane
+    newName: ghcr.io/ali-marandi/datasense-control-plane
+    newTag: REPLACE_WITH_IMMUTABLE_DIGEST
+patches:
+  - target:
+      version: v1
+      kind: ConfigMap
+      name: datasense-control-plane-config
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: datasense-control-plane-config
+      data:
+        APP_ENV: production
+        DATASENSE_ENVIRONMENT: production
+        DATASENSE_PUBLIC_BASE_URL: https://REPLACE_WITH_PRODUCTION_CONTROL_PLANE_FQDN
+        DATASENSE_JWT_ISSUER: https://REPLACE_WITH_PRODUCTION_CONTROL_PLANE_FQDN
+        DATASENSE_ALLOWED_HOSTS: REPLACE_WITH_PRODUCTION_CONTROL_PLANE_FQDN
+        DATASENSE_CORS_ORIGINS: https://REPLACE_WITH_PRODUCTION_DESKTOP_ORIGIN
+  # Production worker activation is a separate, approved change after the
+  # outbox acceptance gate has passed; API promotion cannot enable delivery.
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: datasense-outbox-worker
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 0

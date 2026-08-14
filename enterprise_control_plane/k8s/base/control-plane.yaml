@@ -3,7 +3,14 @@ kind: ConfigMap
 metadata:
   name: datasense-control-plane-config
 data:
+  # Base is deliberately non-deployable until an environment overlay supplies
+  # the actual FQDN and immutable image digest.
   APP_ENV: production
+  DATASENSE_ENVIRONMENT: production
+  DATASENSE_PUBLIC_BASE_URL: https://REPLACE_WITH_CONTROL_PLANE_FQDN
+  DATASENSE_JWT_ISSUER: https://REPLACE_WITH_CONTROL_PLANE_FQDN
+  DATASENSE_ALLOWED_HOSTS: REPLACE_WITH_CONTROL_PLANE_FQDN
+  DATASENSE_CORS_ORIGINS: https://REPLACE_WITH_DESKTOP_ORIGIN
   LOG_LEVEL: INFO
   OUTBOX_POLL_INTERVAL_SECONDS: "2"
 ---

@@ -4,6 +4,7 @@ from __future__ import annotations
 from .auth import AuthorizationCodeService, TokenService
 from .ephemeral_store import RedisEphemeralStore
 from .main import ControlPlaneComponents, create_app
+from .quality_gate import QualityGateService
 from .rbac import PermissionService
 from .repositories import PostgresEnterpriseRepository
 from .saml import SamlServiceProvider
@@ -37,6 +38,7 @@ app = create_app(ControlPlaneComponents(
     token_service=tokens,
     permission_service=permission_service,
     audit_sink=repository,
+    quality_gate_service=QualityGateService(repository),
     ready_check=repository.ready,
 ))
 

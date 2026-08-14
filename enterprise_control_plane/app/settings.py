@@ -25,6 +25,13 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./datasense-enterprise.db"
     redis_url: str | None = None
+    outbox_worker_database_url: str | None = None
+    outbox_webhook_url: str | None = None
+    outbox_webhook_token_file: Path | None = None
+    outbox_poll_interval_seconds: float = Field(default=2.0, ge=0.1, le=60.0)
+    outbox_batch_size: int = Field(default=25, ge=1, le=500)
+    outbox_lease_seconds: int = Field(default=60, ge=5, le=3600)
+    outbox_max_attempts: int = Field(default=8, ge=1, le=100)
 
     jwt_issuer: str = "http://localhost:8080"
     jwt_audience: str = "datasense-desktop"
@@ -63,6 +70,14 @@ class Settings(BaseSettings):
         if not value:
             raise RuntimeError(f"{name} secret is empty")
         return value
+
+    def assert_worker_safe(self) -> None:
+        """Validate the separate worker deployment only when its entrypoint starts."""
+        if not self.outbox_worker_database_url:
+            raise RuntimeError("outbox worker requires a dedicated database URL")
+        if not self.outbox_webhook_url or not self.outbox_webhook_url.startswith("https://"):
+            raise RuntimeError("outbox worker requires an HTTPS webhook URL")
+        self.required_secret("Outbox webhook token", self.outbox_webhook_token_file)
 
     def assert_production_safe(self) -> None:
         if self.environment != "production":

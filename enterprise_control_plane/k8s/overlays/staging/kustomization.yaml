@@ -1,0 +1,57 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: datasense-control-plane-staging
+resources:
+  - ../../base
+images:
+  - name: registry.example.invalid/datasense/control-plane
+    newName: ghcr.io/ali-marandi/datasense-control-plane
+    newTag: REPLACE_WITH_IMMUTABLE_DIGEST
+patches:
+  - target:
+      version: v1
+      kind: ConfigMap
+      name: datasense-control-plane-config
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: datasense-control-plane-config
+      data:
+        APP_ENV: staging
+        DATASENSE_ENVIRONMENT: staging
+        DATASENSE_PUBLIC_BASE_URL: https://REPLACE_WITH_STAGING_CONTROL_PLANE_FQDN
+        DATASENSE_JWT_ISSUER: https://REPLACE_WITH_STAGING_CONTROL_PLANE_FQDN
+        DATASENSE_ALLOWED_HOSTS: REPLACE_WITH_STAGING_CONTROL_PLANE_FQDN
+        DATASENSE_CORS_ORIGINS: https://REPLACE_WITH_STAGING_DESKTOP_ORIGIN
+  # Worker remains deliberately disabled until migration, fake-sink acceptance,
+  # queue recovery and alert-routing checks have a signed operational decision.
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: datasense-outbox-worker
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 0
+  # namespaceSelector is a spec field and does not follow the Kustomize
+  # namespace transformer; keep Prometheus discovery inside staging.
+  - target:
+      group: monitoring.coreos.com
+      version: v1
+      kind: ServiceMonitor
+      name: datasense-control-plane
+    patch: |-
+      - op: replace
+        path: /spec/namespaceSelector/matchNames/0
+        value: datasense-control-plane-staging
+  - target:
+      group: monitoring.coreos.com
+      version: v1
+      kind: ServiceMonitor
+      name: datasense-outbox-worker
+    patch: |-
+      - op: replace
+        path: /spec/namespaceSelector/matchNames/0
+        value: datasense-control-plane-staging

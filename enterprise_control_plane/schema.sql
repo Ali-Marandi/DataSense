@@ -87,14 +87,66 @@ CREATE TABLE audit_events (
 CREATE INDEX audit_events_org_time_idx ON audit_events (organization_id, occurred_at DESC);
 CREATE INDEX audit_events_correlation_idx ON audit_events (correlation_id);
 
+-- Outbox payloads must contain metadata-only, versioned event bodies. They are never Prometheus labels.
+CREATE TABLE outbox_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  event_type text NOT NULL CHECK (event_type ~ '^[a-z][a-z0-9_.-]{2,127}$'),
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  idempotency_key text NOT NULL,
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','processing','sent','dead')),
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  next_attempt_at timestamptz NOT NULL DEFAULT now(),
+  lease_expires_at timestamptz,
+  lease_owner text,
+  last_error_code text,
+  sent_at timestamptz,
+  dead_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (organization_id, idempotency_key)
+);
+CREATE INDEX outbox_claim_idx ON outbox_events (status, next_attempt_at, created_at)
+  WHERE status = 'pending';
+CREATE INDEX outbox_lease_idx ON outbox_events (lease_expires_at)
+  WHERE status = 'processing';
+CREATE INDEX outbox_dead_idx ON outbox_events (organization_id, dead_at DESC)
+  WHERE status = 'dead';
+
+-- Metadata-only Quality Gate evidence from an authenticated client or scheduler.
+CREATE TABLE quality_gate_observations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  execution_id text NOT NULL,
+  contract_fingerprint char(64) NOT NULL,
+  policy_tier text NOT NULL CHECK (policy_tier IN ('sandbox','standard','tier_1','restricted')),
+  decision text NOT NULL CHECK (decision IN ('approved','blocked','not_configured')),
+  score numeric(5,1),
+  critical_failures integer NOT NULL DEFAULT 0 CHECK (critical_failures >= 0),
+  high_failures integer NOT NULL DEFAULT 0 CHECK (high_failures >= 0),
+  rule_errors integer NOT NULL DEFAULT 0 CHECK (rule_errors >= 0),
+  rows_examined bigint NOT NULL DEFAULT 0 CHECK (rows_examined >= 0),
+  actor_subject text NOT NULL,
+  recorded_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (organization_id, execution_id)
+);
+CREATE INDEX quality_gate_observations_org_time_idx
+  ON quality_gate_observations (organization_id, recorded_at DESC);
+
 -- Application role must only have DML rights; migrations run under a separate owner role.
 ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE memberships ENABLE ROW LEVEL SECURITY;
 ALTER TABLE saml_connections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE outbox_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quality_gate_observations ENABLE ROW LEVEL SECURITY;
 -- The repository sets: SET LOCAL app.organization_id = '<UUID>' for every scoped transaction.
 CREATE POLICY organization_isolation ON organizations
   USING (id::text = current_setting('app.organization_id', true));
 CREATE POLICY membership_isolation ON memberships
   USING (organization_id::text = current_setting('app.organization_id', true));
 CREATE POLICY saml_connection_isolation ON saml_connections
+  USING (organization_id::text = current_setting('app.organization_id', true));
+CREATE POLICY outbox_organization_isolation ON outbox_events
+  USING (organization_id::text = current_setting('app.organization_id', true));
+CREATE POLICY quality_gate_observation_isolation ON quality_gate_observations
   USING (organization_id::text = current_setting('app.organization_id', true));

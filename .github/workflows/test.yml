@@ -1,31 +1,78 @@
-name: Test DataSense
+name: Verify DataSense
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
+    name: Python regression and enterprise-control-plane tests
     runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
     steps:
-      - name: Checkout code
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            enterprise_control_plane/requirements.txt
 
-      - name: Install dependencies
+      - name: Install application and Control Plane dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas numpy PyQt6 pytest
+          pip install -r requirements.txt
+          pip install -r enterprise_control_plane/requirements.txt
 
-      - name: Run tests
+      - name: Run complete pytest suite
+        run: python -m pytest -q
+
+  validate-kubernetes:
+    name: Render and validate Kubernetes baseline
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.30.0
+
+      - name: Render base and environment overlays
         run: |
-          # Use xvfb to run tests that might involve GUI components, 
-          # although our unit tests currently only test the core logic.
-          python -m unittest discover tests
+          mkdir -p rendered-manifests
+          for layer in base overlays/staging overlays/production; do
+            output="rendered-manifests/$(echo "$layer" | tr '/' '-')".yaml
+            kubectl kustomize "enterprise_control_plane/k8s/$layer" > "$output"
+            test -s "$output"
+          done
+
+      - name: Validate YAML, dashboard JSON and built-in Kubernetes objects
+        run: |
+          jq empty enterprise_control_plane/k8s/monitoring/grafana-dashboard.json
+          for manifest in rendered-manifests/*.yaml; do
+            kubectl apply --dry-run=client --validate=false -f "$manifest"
+          done
+
+      - name: Publish rendered manifests for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: datasense-kubernetes-rendered-${{ github.sha }}
+          retention-days: 14
+          path: rendered-manifests/

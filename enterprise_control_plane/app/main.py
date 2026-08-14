@@ -12,7 +12,8 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from .auth import AuthorizationCodeService, TokenService
 from .metrics import HTTP_DURATION_SECONDS, HTTP_REQUESTS
-from .models import Permission, ResourceRef
+from .models import Permission, Principal, ResourceRef
+from .quality_gate import QualityGateObservation, QualityGateService
 from .rbac import AuditSink, PermissionMiddleware, PermissionService, require_permission
 from .saml import SamlSecurityError, SamlServiceProvider
 
@@ -24,6 +25,7 @@ class ControlPlaneComponents:
     token_service: TokenService
     permission_service: PermissionService
     audit_sink: AuditSink
+    quality_gate_service: QualityGateService | None = None
     ready_check: Callable[[], Awaitable[bool]] | None = None
 
 
@@ -88,6 +90,20 @@ def create_app(components: ControlPlaneComponents) -> FastAPI:
         return RedirectResponse(
             f"{transaction['return_uri']}?{urlencode({'code': code})}", status_code=status.HTTP_303_SEE_OTHER
         )
+
+    async def organization_resource(_request: Request, principal: Principal) -> ResourceRef:
+        return ResourceRef("organization", principal.organization_id, principal.organization_id)
+
+    @app.post("/v1/governance/quality-observations", status_code=status.HTTP_202_ACCEPTED)
+    async def record_quality_gate_observation(
+        observation: QualityGateObservation,
+        principal: Principal = Depends(require_permission(
+            Permission.CONTRACT_RUN, organization_resource, components.permission_service
+        )),
+    ) -> dict[str, bool]:
+        if components.quality_gate_service is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="quality observation service unavailable")
+        return {"recorded": await components.quality_gate_service.record(principal, observation)}
 
     @app.post("/v1/auth/token", include_in_schema=False)
     async def token_exchange(
