@@ -2,7 +2,7 @@
 
 ## هدف و وضعیت
 
-pipeline جدید دو مسیر مجزا دارد. مسیر نخست با هر push یا pull request روی `main` اجرا می‌شود و pytest کامل، render Kustomize، اعتبار JSON dashboard و client-side validation manifest را انجام می‌دهد. مسیر دوم فقط با اجرای دستی و approval محیط GitHub فعال می‌شود و manifest تاییدشده را با image digest immutable به کلاستر promote می‌کند.
+pipeline جدید دو مسیر مجزا دارد. مسیر نخست با هر push یا pull request روی `main` اجرا می‌شود و pytest کامل، render Kustomize برای base و overlayها، syntax YAML و اعتبار JSON dashboard را انجام می‌دهد. مسیر دوم فقط با اجرای دستی و approval محیط GitHub فعال می‌شود و manifest تاییدشده را با image digest immutable به کلاستر promote می‌کند.
 
 > deploy خودکار به production بدون GitHub Environment approval، migration review، secret injection، baseline SLO و evidence پذیرش worker توصیه نمی‌شود. workflow فعلی API را promote می‌کند؛ worker عمداً با `replicas: 0` باقی می‌ماند تا migration outbox، fake-sink acceptance، alert routing و تصمیم امضاشدهٔ عملیات تکمیل شود.
 
@@ -31,9 +31,9 @@ credential CI باید فقط به `datasense-control-plane` namespace و resour
 
 ## CI در pull request
 
-پس از ایجاد PR، workflow `Verify DataSense` باید هر دو job را سبز کند. job test، `requirements.txt` و `enterprise_control_plane/requirements.txt` را نصب، سپس `python -m pytest -q` را با `QT_QPA_PLATFORM=offscreen` اجرا می‌کند. این متغیر crash headless Qt را که در sandbox قبلی مشاهده شد مهار می‌کند.
+پس از ایجاد PR، workflow `Verify DataSense` باید هر دو job را سبز کند. job test، runtime library `libegl1` برای import smoke PyQt6، سپس `requirements.txt` و `enterprise_control_plane/requirements.txt` را نصب و `python -m pytest -q` را با `QT_QPA_PLATFORM=offscreen` اجرا می‌کند. این دو کنترل، هم dependency باینری Qt و هم حالت headless runner را پوشش می‌دهند.
 
-job Kubernetes با `kubectl kustomize` فایل base را render می‌کند. وجود placeholder digest به‌تنهایی failure نیست، زیرا base به‌صورت عمدی deployable نیست. dashboard JSON با `jq empty` کنترل می‌شود و manifest rendered با `kubectl apply --dry-run=client --validate=false` بررسی ساختاری می‌شود. validation CRDهای ServiceMonitor/PrometheusRule به cluster دارای Operator در مرحلهٔ promotion نیاز دارد؛ client-side dry-run جایگزین آن نیست.
+job Kubernetes با `kubectl kustomize`، base و هر دو overlay `staging` و `production` را render می‌کند. وجود placeholder digest یا FQDN در artifact به‌تنهایی failure نیست، زیرا overlay بدون دادهٔ محیطی آگاهانه deployable نیست. syntax YAML با `yamllint` و dashboard JSON با `jq empty` کنترل می‌شود. `kubectl apply --dry-run=client` در runner بدون API server معتبر نیست، زیرا discovery انجام می‌دهد؛ validation admission، CRD schema و RBAC فقط در server-side dry-run محیط محافظت‌شدهٔ promotion انجام می‌شود.
 
 Artifact `datasense-kubernetes-rendered-<SHA>` باید توسط reviewer platform بررسی شود. بررسی باید image placeholder، NetworkPolicy overlay، namespace label، resource limits، worker replicas و ServiceMonitor release label را پوشش دهد.
 

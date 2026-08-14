@@ -33,6 +33,11 @@ jobs:
             requirements.txt
             enterprise_control_plane/requirements.txt
 
+      - name: Install Linux runtime libraries required by PyQt6 smoke tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1
+
       - name: Install application and Control Plane dependencies
         run: |
           python -m pip install --upgrade pip
@@ -63,12 +68,14 @@ jobs:
             test -s "$output"
           done
 
-      - name: Validate YAML, dashboard JSON and built-in Kubernetes objects
+      - name: Validate source YAML and dashboard JSON without a cluster
         run: |
+          sudo apt-get update
+          sudo apt-get install -y yamllint jq
+          yamllint -d '{extends: default, rules: {line-length: disable, document-start: disable, truthy: disable, comments-indentation: disable}}' .github/workflows enterprise_control_plane/k8s
           jq empty enterprise_control_plane/k8s/monitoring/grafana-dashboard.json
-          for manifest in rendered-manifests/*.yaml; do
-            kubectl apply --dry-run=client --validate=false -f "$manifest"
-          done
+          # kubectl apply dry-run still needs an API server for discovery. Admission,
+          # CRD schema and RBAC validation occur in the protected promotion workflow.
 
       - name: Publish rendered manifests for review
         uses: actions/upload-artifact@v4
