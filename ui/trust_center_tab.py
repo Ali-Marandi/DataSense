@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -24,6 +25,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.evidence import read_signing_key, write_evidence_bundle
 from core.governance import (
     DataContract,
     DataQualityRule,
@@ -165,6 +167,10 @@ class TrustCenterTab(QWidget):
         self.export_button = QPushButton("Export audit JSON")
         self.export_button.clicked.connect(self.export_audit)
         top.addWidget(self.export_button)
+        self.signed_export_button = QPushButton("Export signed evidence bundle")
+        self.signed_export_button.setToolTip("Signs metadata-only evidence with a local HMAC key file; the key is never included in the bundle.")
+        self.signed_export_button.clicked.connect(self.export_signed_evidence)
+        top.addWidget(self.signed_export_button)
         root.addLayout(top)
 
         self.pii_table = QTableWidget(0, 6)
@@ -349,6 +355,42 @@ class TrustCenterTab(QWidget):
             QMessageBox.critical(self, "Export failed", str(exc))
             return
         QMessageBox.information(self, "Audit exported", f"Audit evidence was saved to:\n{path}")
+
+    def export_signed_evidence(self) -> None:
+        if self.manager.governance_report is None:
+            QMessageBox.information(self, "Run checks first", "Run quality checks before creating signed evidence.")
+            return
+        key_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choose HMAC signing key file",
+            "",
+            "Key files (*.key *.secret *.txt);;All files (*)",
+        )
+        if not key_path:
+            return
+        bundle_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export signed evidence bundle",
+            "datasense-evidence.signed.json",
+            "JSON files (*.json)",
+        )
+        if not bundle_path:
+            return
+        try:
+            key = read_signing_key(key_path)
+            bundle = self.manager.signed_evidence_bundle(key, Path(key_path).stem)
+            write_evidence_bundle(bundle_path, bundle)
+        except (OSError, ValueError) as exc:
+            QMessageBox.critical(self, "Signed export failed", str(exc))
+            return
+        signature = bundle["signature"]
+        QMessageBox.information(
+            self,
+            "Signed evidence exported",
+            "Metadata-only evidence was signed and saved to:\n"
+            f"{bundle_path}\n\nAlgorithm: {signature['algorithm']}\nKey ID: {signature['key_id']}\n"
+            "Keep the signing key outside source control. Verification is available through core.evidence.",
+        )
 
     def _populate_table(self, widget: QTableWidget, frame) -> None:
         widget.setRowCount(len(frame))

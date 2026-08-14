@@ -14,6 +14,7 @@ from typing import Any, Iterable
 import numpy as np
 import pandas as pd
 
+from .evidence import build_evidence_payload, sign_evidence_payload
 from .lineage import LineageTrail
 from .governance import (
     DataContract,
@@ -509,6 +510,22 @@ class DataManager:
         self.governance_report = self.governance_contract.execute(self.df)
         self.quality_history.add(self.governance_report, self.governance_report.gate_decision(self.quality_gate_policy))
         return self.governance_report
+
+    def signed_evidence_bundle(self, signing_key: bytes, key_id: str) -> dict[str, Any]:
+        """Create a metadata-only signed bundle from the current, non-stale governance report."""
+        if self.governance_report is None:
+            raise ValueError("Run quality checks before creating signed evidence.")
+        payload = build_evidence_payload(
+            report=self.governance_report,
+            contract=self.governance_contract,
+            gate_policy=self.quality_gate_policy,
+            quality_history=self.quality_history,
+            schema_baseline=self.schema_baseline,
+            schema_drift_policy=self.schema_drift_policy,
+            schema_drift_report=self.check_schema_drift(),
+            lineage=self.lineage,
+        )
+        return sign_evidence_payload(payload, signing_key, key_id)
 
     # --------------------------------------------------------------- versions
     def save_version(self, version_name: str) -> tuple[bool, str]:
