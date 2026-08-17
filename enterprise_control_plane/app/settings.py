@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     outbox_lease_seconds: int = Field(default=60, ge=5, le=3600)
     outbox_max_attempts: int = Field(default=8, ge=1, le=100)
 
+    activation_alert_hmac_key_file: Path | None = None
+    activation_alert_allowed_names: str = "activation_outbox_lag_critical"
+    activation_alert_clock_skew_seconds: int = Field(default=300, ge=30, le=900)
+
     jwt_issuer: str = "http://localhost:8080"
     jwt_audience: str = "datasense-desktop"
     jwt_private_key_pem_file: Path | None = None
@@ -88,6 +92,7 @@ class Settings(BaseSettings):
             ("JWT private key", self.jwt_private_key_pem_file),
             ("JWT public key", self.jwt_public_key_pem_file),
             ("Audit HMAC key", self.audit_hmac_key_file),
+            ("Activation alert HMAC key", self.activation_alert_hmac_key_file),
             ("SAML SP certificate", self.saml_sp_x509_cert_pem_file),
             ("SAML SP private key", self.saml_sp_private_key_pem_file),
         ):

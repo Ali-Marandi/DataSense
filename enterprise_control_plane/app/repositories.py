@@ -5,6 +5,8 @@ import json
 from datetime import datetime
 from typing import Any
 
+from .activation_circuit import CircuitApproval, CircuitSnapshot, CircuitState
+from .activation_payload import validate_activation_payload
 from .models import AuditEvent, SamlConnection
 from .outbox import OutboxEvent, OutboxStats
 from .quality_gate import QualityGateObservation
@@ -161,6 +163,9 @@ class PostgresEnterpriseRepository:
         idempotency_key: str,
     ) -> bool:
         """Insert a metadata-only event exactly once per tenant/idempotency key."""
+        if event_type.startswith("activation."):
+            # Only the canonical bounded form reaches PostgreSQL or a worker lease.
+            payload = validate_activation_payload(payload).as_dict()
         query = """
           INSERT INTO outbox_events (organization_id, event_type, payload, idempotency_key)
           VALUES (%s::uuid, %s, %s::jsonb, %s)
@@ -222,6 +227,10 @@ class PostgresEnterpriseRepository:
     async def mark_dead(self, event_id: str, *, error_code: str) -> None:
         await self._transition(event_id, "dead", error_code, None)
 
+    async def mark_suppressed(self, event_id: str, *, reason_code: str) -> None:
+        """Make a fail-closed policy decision terminal; suppressed events must not retry."""
+        await self._transition(event_id, "suppressed", reason_code, None)
+
     async def _transition(
         self,
         event_id: str,
@@ -236,11 +245,12 @@ class PostgresEnterpriseRepository:
                  next_attempt_at = COALESCE(%s::timestamptz, next_attempt_at),
                  sent_at = CASE WHEN %s = 'sent' THEN now() ELSE sent_at END,
                  dead_at = CASE WHEN %s = 'dead' THEN now() ELSE dead_at END,
+                 suppressed_at = CASE WHEN %s = 'suppressed' THEN now() ELSE suppressed_at END,
                  lease_owner = NULL, lease_expires_at = NULL, updated_at = now()
            WHERE id = %s::uuid AND status = 'processing'
         """
         async with self.pool.connection() as conn, conn.cursor() as cursor:
-            await cursor.execute(query, (target_status, error_code, next_attempt_at, target_status, target_status, event_id))
+            await cursor.execute(query, (target_status, error_code, next_attempt_at, target_status, target_status, target_status, event_id))
             if cursor.rowcount != 1:
                 raise RuntimeError("outbox event transition lost its processing lease")
             await conn.commit()
@@ -258,3 +268,161 @@ class PostgresEnterpriseRepository:
             await cursor.execute(query, (now,))
             row = await cursor.fetchone()
         return OutboxStats(int(row[0]), int(row[1]), int(row[2]), float(row[3]))
+
+    async def get_activation_circuit(self, *, organization_id: str, scope: str) -> CircuitSnapshot | None:
+        query = """
+          SELECT organization_id::text, scope, state, version, reason_code, opened_at
+            FROM activation_circuit_states
+           WHERE organization_id = %s::uuid AND scope = %s
+        """
+        async with self.pool.connection() as conn:
+            async with conn.transaction():
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT set_config('app.organization_id', %s, true)", (organization_id,))
+                    await cursor.execute(query, (organization_id, scope))
+                    row = await cursor.fetchone()
+        if row is None:
+            return None
+        return CircuitSnapshot(str(row[0]), str(row[1]), CircuitState(str(row[2])), int(row[3]), str(row[4]), row[5])
+
+    async def compare_and_set_activation_circuit(
+        self,
+        *,
+        organization_id: str,
+        scope: str,
+        expected_version: int,
+        target_state: CircuitState,
+        reason_code: str,
+        opened_at: datetime | None,
+    ) -> CircuitSnapshot | None:
+        query = """
+          UPDATE activation_circuit_states
+             SET state = %s, version = version + 1, reason_code = %s,
+                 opened_at = %s::timestamptz, updated_at = now()
+           WHERE organization_id = %s::uuid AND scope = %s AND version = %s
+        RETURNING organization_id::text, scope, state, version, reason_code, opened_at
+        """
+        async with self.pool.connection() as conn:
+            async with conn.transaction():
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT set_config('app.organization_id', %s, true)", (organization_id,))
+                    await cursor.execute(query, (target_state.value, reason_code, opened_at, organization_id, scope, expected_version))
+                    row = await cursor.fetchone()
+        if row is None:
+            return None
+        return CircuitSnapshot(str(row[0]), str(row[1]), CircuitState(str(row[2])), int(row[3]), str(row[4]), row[5])
+
+    async def record_activation_circuit_approval(self, approval: CircuitApproval) -> None:
+        query = """
+          INSERT INTO activation_circuit_approvals (
+            organization_id, scope, transition, approved_by, approval_reference, approved_at
+          ) VALUES (%s::uuid, %s, %s, %s, %s, %s::timestamptz)
+          ON CONFLICT (organization_id, scope, transition, approval_reference) DO NOTHING
+        """
+        async with self.pool.connection() as conn:
+            async with conn.transaction():
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT set_config('app.organization_id', %s, true)", (approval.organization_id,))
+                    await cursor.execute(query, (
+                        approval.organization_id, approval.scope, approval.transition, approval.approved_by,
+                        approval.approval_reference, approval.approved_at,
+                    ))
+
+    async def try_consume_half_open_probe(
+        self,
+        *,
+        organization_id: str,
+        scope: str,
+        window_started_at: datetime,
+        max_attempts: int,
+    ) -> bool:
+        query = """
+          INSERT INTO activation_half_open_probes (organization_id, scope, window_started_at, attempts)
+          VALUES (%s::uuid, %s, %s::timestamptz, 1)
+          ON CONFLICT (organization_id, scope, window_started_at) DO UPDATE
+             SET attempts = activation_half_open_probes.attempts + 1
+           WHERE activation_half_open_probes.attempts < %s
+        RETURNING attempts
+        """
+        async with self.pool.connection() as conn:
+            async with conn.transaction():
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT set_config('app.organization_id', %s, true)", (organization_id,))
+                    await cursor.execute(query, (organization_id, scope, window_started_at, max_attempts))
+                    return await cursor.fetchone() is not None
+
+    async def activation_tenant_kill_enabled(self, *, organization_id: str, scope: str) -> bool | None:
+        query = """
+          SELECT enabled FROM activation_kill_switches
+           WHERE organization_id = %s::uuid AND scope IN (%s, 'activation.global')
+           ORDER BY CASE WHEN scope = 'activation.global' THEN 0 ELSE 1 END DESC
+           LIMIT 1
+        """
+        async with self.pool.connection() as conn:
+            async with conn.transaction():
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT set_config('app.organization_id', %s, true)", (organization_id,))
+                    await cursor.execute(query, (organization_id, scope))
+                    row = await cursor.fetchone()
+        return bool(row[0]) if row is not None else None
+
+    async def activation_consent_granted(self, *, organization_id: str, recipient_ref: str, channel: str) -> bool | None:
+        query = """
+          SELECT granted FROM activation_delivery_consents
+           WHERE organization_id = %s::uuid AND recipient_ref_hash = %s AND channel = %s
+        """
+        async with self.pool.connection() as conn:
+            async with conn.transaction():
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT set_config('app.organization_id', %s, true)", (organization_id,))
+                    await cursor.execute(query, (organization_id, recipient_ref, channel))
+                    row = await cursor.fetchone()
+        return bool(row[0]) if row is not None else None
+
+    async def begin_activation_execution(
+        self,
+        *,
+        organization_id: str,
+        execution_key: str,
+        provider_idempotency_key: str,
+    ):
+        """Reserve an activation execution or return its durable existing state."""
+        from .activation_execution import ExecutionReservation
+
+        query = """
+          INSERT INTO activation_trigger_executions (
+            organization_id, execution_key, state, provider_idempotency_key
+          ) VALUES (%s::uuid, %s, 'started', %s)
+          ON CONFLICT (organization_id, execution_key) DO UPDATE
+             SET updated_at = activation_trigger_executions.updated_at
+        RETURNING state, provider_idempotency_key
+        """
+        async with self.pool.connection() as conn:
+            async with conn.transaction():
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT set_config('app.organization_id', %s, true)", (organization_id,))
+                    await cursor.execute(query, (organization_id, execution_key, provider_idempotency_key))
+                    row = await cursor.fetchone()
+        return ExecutionReservation(str(row[0]), str(row[1]))
+
+    async def record_activation_execution_state(
+        self,
+        *,
+        organization_id: str,
+        execution_key: str,
+        target_state: str,
+        reason_code: str | None = None,
+    ) -> None:
+        query = """
+          UPDATE activation_trigger_executions
+             SET state = %s, reason_code = %s, updated_at = now()
+           WHERE organization_id = %s::uuid AND execution_key = %s
+             AND state = 'started'
+        """
+        async with self.pool.connection() as conn:
+            async with conn.transaction():
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT set_config('app.organization_id', %s, true)", (organization_id,))
+                    await cursor.execute(query, (target_state, reason_code, organization_id, execution_key))
+                    if cursor.rowcount != 1:
+                        raise RuntimeError("activation execution state transition was not owned")

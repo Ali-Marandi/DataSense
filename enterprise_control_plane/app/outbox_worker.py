@@ -10,6 +10,9 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Response, status
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from .activation_circuit import ActivationCircuitService
+from .activation_execution import ActivationExecutionLedger
+from .activation_policy import DeliveryEligibilityService
 from .outbox import OutboxWorker
 from .outbox_delivery import WebhookDeliveryClient
 from .repositories import PostgresEnterpriseRepository
@@ -71,9 +74,12 @@ async def serve() -> None:
     repository = PostgresEnterpriseRepository(database_url)
     await repository.open()
     state = WorkerState()
+    circuit = ActivationCircuitService(repository)
     worker = OutboxWorker(
         repository,
         WebhookDeliveryClient(settings.outbox_webhook_url, token),
+        policy_evaluator=DeliveryEligibilityService(repository, circuit),
+        execution_ledger=ActivationExecutionLedger(repository),
         batch_size=settings.outbox_batch_size,
         lease_seconds=settings.outbox_lease_seconds,
         max_attempts=settings.outbox_max_attempts,

@@ -56,3 +56,18 @@ OUTBOX_LEASE_RECOVERIES = Counter(
     "datasense_outbox_lease_recoveries_total",
     "Outbox events returned to pending after a stale worker lease.",
 )
+ACTIVATION_SUPPRESSIONS = Counter(
+    "datasense_activation_suppressions_total",
+    "Fail-closed activation decisions without tenant, recipient, or payload labels.",
+    ("reason_code",),
+)
+ACTIVATION_PAYLOAD_REJECTIONS = Counter(
+    "datasense_activation_payload_rejections_total",
+    "Rejected activation payloads classified by a bounded reason code.",
+    ("reason_code",),
+)
+ACTIVATION_ALERTS = Counter(
+    "datasense_activation_controller_alerts_total",
+    "Signed controller alerts classified by a bounded verification outcome.",
+    ("outcome",),
+)

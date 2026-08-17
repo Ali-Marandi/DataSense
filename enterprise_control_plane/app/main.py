@@ -10,6 +10,7 @@ from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response, st
 from fastapi.responses import RedirectResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from .activation_controller import ActivationAlertController, AlertVerificationError
 from .auth import AuthorizationCodeService, TokenService
 from .metrics import HTTP_DURATION_SECONDS, HTTP_REQUESTS
 from .models import Permission, Principal, ResourceRef
@@ -26,6 +27,7 @@ class ControlPlaneComponents:
     permission_service: PermissionService
     audit_sink: AuditSink
     quality_gate_service: QualityGateService | None = None
+    activation_alert_controller: ActivationAlertController | None = None
     ready_check: Callable[[], Awaitable[bool]] | None = None
 
 
@@ -104,6 +106,20 @@ def create_app(components: ControlPlaneComponents) -> FastAPI:
         if components.quality_gate_service is None:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="quality observation service unavailable")
         return {"recorded": await components.quality_gate_service.record(principal, observation)}
+
+    @app.post("/internal/v1/activation/alerts", include_in_schema=False)
+    async def receive_activation_alert(request: Request) -> dict[str, str]:
+        controller = components.activation_alert_controller
+        if controller is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="activation controller unavailable")
+        try:
+            snapshot = await controller.receive(
+                raw_body=await request.body(),
+                signature=request.headers.get("X-DataSense-Alert-Signature"),
+            )
+        except AlertVerificationError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.reason_code) from exc
+        return {"state": snapshot.state.value, "scope": snapshot.scope}
 
     @app.post("/v1/auth/token", include_in_schema=False)
     async def token_exchange(

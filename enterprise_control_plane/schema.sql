@@ -94,7 +94,7 @@ CREATE TABLE outbox_events (
   event_type text NOT NULL CHECK (event_type ~ '^[a-z][a-z0-9_.-]{2,127}$'),
   payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   idempotency_key text NOT NULL,
-  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','processing','sent','dead')),
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','processing','sent','dead','suppressed')),
   attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
   next_attempt_at timestamptz NOT NULL DEFAULT now(),
   lease_expires_at timestamptz,
@@ -102,6 +102,7 @@ CREATE TABLE outbox_events (
   last_error_code text,
   sent_at timestamptz,
   dead_at timestamptz,
+  suppressed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (organization_id, idempotency_key)
@@ -149,4 +150,85 @@ CREATE POLICY saml_connection_isolation ON saml_connections
 CREATE POLICY outbox_organization_isolation ON outbox_events
   USING (organization_id::text = current_setting('app.organization_id', true));
 CREATE POLICY quality_gate_observation_isolation ON quality_gate_observations
+  USING (organization_id::text = current_setting('app.organization_id', true));
+
+-- Activation governance state is intentionally metadata-only and fully tenant-scoped.
+CREATE TABLE activation_circuit_states (
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  scope text NOT NULL CHECK (scope ~ '^[a-z][a-z0-9_.-]{2,127}$'),
+  state text NOT NULL CHECK (state IN ('closed','open','half_open','manual_kill')),
+  version bigint NOT NULL DEFAULT 0 CHECK (version >= 0),
+  reason_code text NOT NULL CHECK (reason_code ~ '^[a-z][a-z0-9_.-]{2,127}$'),
+  opened_at timestamptz,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (organization_id, scope)
+);
+
+CREATE TABLE activation_circuit_approvals (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  scope text NOT NULL,
+  transition text NOT NULL CHECK (transition IN ('open_to_half_open','half_open_to_closed')),
+  approved_by text NOT NULL CHECK (approved_by ~ '^[a-zA-Z0-9_.:@/-]{3,128}$'),
+  approval_reference text NOT NULL CHECK (approval_reference ~ '^[a-zA-Z0-9_.:@/-]{3,128}$'),
+  approved_at timestamptz NOT NULL,
+  UNIQUE (organization_id, scope, transition, approval_reference)
+);
+
+CREATE TABLE activation_half_open_probes (
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  scope text NOT NULL,
+  window_started_at timestamptz NOT NULL,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0 AND attempts <= 5),
+  PRIMARY KEY (organization_id, scope, window_started_at)
+);
+
+CREATE TABLE activation_delivery_consents (
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  recipient_ref_hash char(64) NOT NULL CHECK (recipient_ref_hash ~ '^[a-f0-9]{64}$'),
+  channel text NOT NULL CHECK (channel IN ('external')),
+  granted boolean NOT NULL,
+  version bigint NOT NULL DEFAULT 0 CHECK (version >= 0),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (organization_id, recipient_ref_hash, channel)
+);
+
+CREATE TABLE activation_trigger_executions (
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  execution_key char(64) NOT NULL CHECK (execution_key ~ '^[a-f0-9]{64}$'),
+  state text NOT NULL CHECK (state IN ('started','effect_recorded','suppressed','failed')),
+  provider_idempotency_key char(64) NOT NULL CHECK (provider_idempotency_key ~ '^[a-f0-9]{64}$'),
+  reason_code text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (organization_id, execution_key)
+);
+
+CREATE TABLE activation_kill_switches (
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  scope text NOT NULL CHECK (scope ~ '^[a-z][a-z0-9_.-]{2,127}$'),
+  enabled boolean NOT NULL DEFAULT false,
+  version bigint NOT NULL DEFAULT 0 CHECK (version >= 0),
+  updated_by text NOT NULL CHECK (updated_by ~ '^[a-zA-Z0-9_.:@/-]{3,128}$'),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (organization_id, scope)
+);
+
+ALTER TABLE activation_circuit_states ENABLE ROW LEVEL SECURITY;
+ALTER TABLE activation_circuit_approvals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE activation_half_open_probes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE activation_delivery_consents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE activation_trigger_executions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE activation_kill_switches ENABLE ROW LEVEL SECURITY;
+CREATE POLICY activation_circuit_state_isolation ON activation_circuit_states
+  USING (organization_id::text = current_setting('app.organization_id', true));
+CREATE POLICY activation_circuit_approval_isolation ON activation_circuit_approvals
+  USING (organization_id::text = current_setting('app.organization_id', true));
+CREATE POLICY activation_half_open_probe_isolation ON activation_half_open_probes
+  USING (organization_id::text = current_setting('app.organization_id', true));
+CREATE POLICY activation_delivery_consent_isolation ON activation_delivery_consents
+  USING (organization_id::text = current_setting('app.organization_id', true));
+CREATE POLICY activation_trigger_execution_isolation ON activation_trigger_executions
+  USING (organization_id::text = current_setting('app.organization_id', true));
+CREATE POLICY activation_kill_switch_isolation ON activation_kill_switches
   USING (organization_id::text = current_setting('app.organization_id', true));

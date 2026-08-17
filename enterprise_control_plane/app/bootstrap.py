@@ -1,6 +1,8 @@
 """Production composition root; all secrets are read from mounted files at process start."""
 from __future__ import annotations
 
+from .activation_circuit import ActivationCircuitService
+from .activation_controller import ActivationAlertController
 from .auth import AuthorizationCodeService, TokenService
 from .ephemeral_store import RedisEphemeralStore
 from .main import ControlPlaneComponents, create_app
@@ -32,6 +34,14 @@ saml = SamlServiceProvider(
     require_encrypted_assertion=settings.saml_encrypted_assertion_required,
 )
 permission_service = PermissionService(repository)
+activation_alert_controller = ActivationAlertController(
+    hmac_key=settings.required_secret("Activation alert HMAC key", settings.activation_alert_hmac_key_file),
+    nonce_store=store,
+    circuit=ActivationCircuitService(repository),
+    environment=settings.environment,
+    allowed_alert_names=frozenset(name.strip() for name in settings.activation_alert_allowed_names.split(",") if name.strip()),
+    max_clock_skew_seconds=settings.activation_alert_clock_skew_seconds,
+)
 app = create_app(ControlPlaneComponents(
     saml=saml,
     authorization_codes=AuthorizationCodeService(store, tokens, settings.auth_code_ttl_seconds),
@@ -39,6 +49,7 @@ app = create_app(ControlPlaneComponents(
     permission_service=permission_service,
     audit_sink=repository,
     quality_gate_service=QualityGateService(repository),
+    activation_alert_controller=activation_alert_controller,
     ready_check=repository.ready,
 ))
 
