@@ -47,6 +47,16 @@ jobs:
       - name: Run complete pytest suite
         run: python -m pytest -q
 
+  validate-activation-governance:
+    name: Validate activation-governance skill and safety guards
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Validate skill resources and non-production dry-run guard
+        run: python3 enterprise_control_plane/scripts/validate_activation_governance_skill.py
+
   validate-kubernetes:
     name: Render and validate Kubernetes baseline
     runs-on: ubuntu-latest
