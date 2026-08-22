@@ -314,3 +314,55 @@ class RecordingCircuitOutbox:
         if self.should_fail:
             raise RuntimeError("synthetic outbox unavailable")
         self.calls.append((organization_id, scope, reason_code, rollback_id))
+
+
+class TrustExchangeRollbackIngress:
+    """Fail-closed adapter from a signed Trust Exchange receipt to the local CAS coordinator."""
+
+    def __init__(
+        self,
+        *,
+        repository: RollbackRepository,
+        registry_factory,
+        replay_store,
+        receiver_organization_id: str,
+        environment: str,
+        allowed_scopes: frozenset[str],
+        circuit_outbox: CircuitOpenOutbox | None = None,
+    ) -> None:
+        self._repository = repository
+        self._registry_factory = registry_factory
+        self._replay_store = replay_store
+        self._receiver_organization_id = receiver_organization_id
+        self._environment = environment
+        self._allowed_scopes = allowed_scopes
+        self._circuit_outbox = circuit_outbox
+
+    async def receive(self, *, scope: str, envelope: dict[str, str], now: datetime | None = None) -> RollbackActivation:
+        from .trust_exchange import Ed25519TrustExchangeVerifier, peek_receiver_organization_id
+
+        if scope not in self._allowed_scopes:
+            return RollbackActivation(RollbackOutcome.TRIGGER_DENIED, None, None)
+        try:
+            receiver_organization_id = peek_receiver_organization_id(envelope)
+        except ValueError:
+            return RollbackActivation(RollbackOutcome.TRIGGER_DENIED, None, None)
+        if receiver_organization_id != self._receiver_organization_id:
+            return RollbackActivation(RollbackOutcome.TRIGGER_DENIED, None, None)
+        verifier = Ed25519TrustExchangeVerifier(
+            self._registry_factory(receiver_organization_id),
+            self._replay_store,
+        )
+        coordinator = CASRollbackCoordinator(
+            self._repository,
+            circuit_outbox=self._circuit_outbox,
+            exchange_verifier=verifier,
+        )
+        return await coordinator.activate_from_exchange_receipt(
+            envelope,
+            organization_id=receiver_organization_id,
+            scope=scope,
+            receiver_organization_id=receiver_organization_id,
+            environment=self._environment,
+            now=now,
+        )

@@ -346,3 +346,21 @@ def valid_test_payload(*, now: datetime, relationship: TrustRelationship) -> dic
         "privacy": {"contains_raw_dataset_values": False, "contains_local_source_paths": False},
         "nonce": "synthetic-nonce-0001",
     }
+
+
+def peek_receiver_organization_id(envelope: Mapping[str, Any]) -> str:
+    """Return an untrusted receiver selector used only to choose a tenant-scoped verifier.
+
+    The returned value is **not** authorization.  The subsequent verifier must validate the
+    Ed25519 signature and receiver binding before a coordinator reads or changes state.
+    """
+    if not isinstance(envelope, Mapping) or set(envelope) != {"protected", "payload", "signature"}:
+        raise ValueError("invalid exchange envelope")
+    payload_member = envelope.get("payload")
+    if not isinstance(payload_member, str):
+        raise ValueError("invalid exchange envelope")
+    payload = _parse_canonical_object(payload_member)
+    receiver = payload.get("receiver_organization_id")
+    if not isinstance(receiver, str):
+        raise ValueError("invalid receiver selector")
+    return str(UUID(receiver))

@@ -2,15 +2,25 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
+from .action_gate_rollback import (
+    ActionPermit,
+    ExecutionMode,
+    RollbackActivation,
+    RollbackOutcome,
+    RollbackTrigger,
+    RolloutMode,
+    RolloutState,
+)
 from .activation_circuit import CircuitApproval, CircuitSnapshot, CircuitState
 from .activation_payload import validate_activation_payload
 from .models import AuditEvent, SamlConnection
 from .outbox import OutboxEvent, OutboxStats
 from .quality_gate import QualityGateObservation
 from .saml import ResolvedIdentity
+from .trust_exchange import Ed25519KeyRecord, KeyStatus, TrustRelationship
 
 
 class PostgresEnterpriseRepository:
@@ -426,3 +436,304 @@ class PostgresEnterpriseRepository:
                     await cursor.execute(query, (target_state, reason_code, organization_id, execution_key))
                     if cursor.rowcount != 1:
                         raise RuntimeError("activation execution state transition was not owned")
+
+    async def activate_rollback_once(self, trigger: RollbackTrigger) -> RollbackActivation:
+        """Persist a one-way, deduplicated rollback transition in one RLS-scoped transaction."""
+        insert_intent = """
+          INSERT INTO action_gate_rollback_events (
+            organization_id, scope, trigger_type, reason_code, trigger_evidence_digest, transition_status
+          ) VALUES (%s::uuid, %s, %s, %s, %s, 'pending')
+          ON CONFLICT (organization_id, scope, trigger_evidence_digest) DO NOTHING
+          RETURNING rollback_id::text
+        """
+        existing_event = """
+          SELECT rollback_id::text, transition_status FROM action_gate_rollback_events
+           WHERE organization_id = %s::uuid AND scope = %s AND trigger_evidence_digest = %s
+        """
+        lock_state = """
+          SELECT organization_id::text, scope, mode, execution_mode, active_policy_digest,
+                 last_known_good_policy_digest, version, gate_epoch
+            FROM action_gate_rollout_states
+           WHERE organization_id = %s::uuid AND scope = %s
+           FOR UPDATE
+        """
+        update_state = """
+          UPDATE action_gate_rollout_states
+             SET mode = 'rollback_active', execution_mode = 'suppress_external',
+                 active_policy_digest = %s, version = version + 1, gate_epoch = gate_epoch + 1,
+                 updated_at = now()
+           WHERE organization_id = %s::uuid AND scope = %s
+             AND version = %s AND gate_epoch = %s
+             AND mode IN ('shadow','limited_enforce','enforce')
+        RETURNING organization_id::text, scope, mode, execution_mode, active_policy_digest,
+                  last_known_good_policy_digest, version, gate_epoch
+        """
+        update_event = """
+          UPDATE action_gate_rollback_events
+             SET transition_status = %s, previous_state = %s::jsonb, target_state = %s::jsonb,
+                 completed_at = now()
+           WHERE rollback_id = %s::uuid
+        """
+        audit_outbox = """
+          INSERT INTO outbox_events (organization_id, event_type, payload, idempotency_key)
+          VALUES (%s::uuid, 'action_gate.rollback_activated', %s::jsonb, %s)
+          ON CONFLICT (organization_id, idempotency_key) DO NOTHING
+        """
+        async with self.pool.connection() as conn:
+            async with conn.transaction():
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT set_config('app.organization_id', %s, true)", (trigger.organization_id,))
+                    await cursor.execute(insert_intent, (
+                        trigger.organization_id, trigger.scope, trigger.trigger_type,
+                        trigger.reason_code, trigger.evidence_digest,
+                    ))
+                    intent = await cursor.fetchone()
+                    if intent is None:
+                        await cursor.execute(existing_event, (trigger.organization_id, trigger.scope, trigger.evidence_digest))
+                        existing = await cursor.fetchone()
+                        return RollbackActivation(
+                            RollbackOutcome.ALREADY_HANDLED,
+                            str(existing[0]) if existing else None,
+                            None,
+                        )
+                    rollback_id = str(intent[0])
+                    await cursor.execute(lock_state, (trigger.organization_id, trigger.scope))
+                    current_row = await cursor.fetchone()
+                    if current_row is None:
+                        await cursor.execute(update_event, ("suppressed", json.dumps({}), json.dumps({}), rollback_id))
+                        return RollbackActivation(RollbackOutcome.STATE_UNKNOWN, rollback_id, None)
+                    current = _rollout_state_from_row(current_row)
+                    if current.mode == RolloutMode.MANUAL_KILL or current.execution_mode == ExecutionMode.SUPPRESS_EXTERNAL:
+                        await cursor.execute(update_event, (
+                            "suppressed", json.dumps(_rollout_state_metadata(current)),
+                            json.dumps(_rollout_state_metadata(current)), rollback_id,
+                        ))
+                        return RollbackActivation(RollbackOutcome.ALREADY_CONTAINED, rollback_id, current)
+                    await cursor.execute(update_state, (
+                        current.last_known_good_policy_digest, current.organization_id, current.scope,
+                        current.version, current.gate_epoch,
+                    ))
+                    target_row = await cursor.fetchone()
+                    if target_row is None:
+                        # The row lock prevents an ordinary CAS race. A failed predicate is still
+                        # fail-closed and leaves the intent as suppressed rather than retrying blindly.
+                        await cursor.execute(update_event, (
+                            "suppressed", json.dumps(_rollout_state_metadata(current)), json.dumps({}), rollback_id,
+                        ))
+                        return RollbackActivation(RollbackOutcome.STATE_UNKNOWN, rollback_id, current)
+                    target = _rollout_state_from_row(target_row)
+                    await cursor.execute(update_event, (
+                        "committed", json.dumps(_rollout_state_metadata(current)),
+                        json.dumps(_rollout_state_metadata(target)), rollback_id,
+                    ))
+                    await cursor.execute(audit_outbox, (
+                        trigger.organization_id,
+                        json.dumps({
+                            "version": 1,
+                            "scope": trigger.scope,
+                            "rollback_id": rollback_id,
+                            "reason_code": trigger.reason_code,
+                            "trigger_type": trigger.trigger_type,
+                            "trigger_evidence_digest": trigger.evidence_digest,
+                            "gate_epoch": target.gate_epoch,
+                        }),
+                        f"action-gate-rollback:{rollback_id}",
+                    ))
+        return RollbackActivation(RollbackOutcome.ROLLBACK_ACTIVE, rollback_id, target)
+
+    async def issue_permit(
+        self,
+        *,
+        organization_id: str,
+        scope: str,
+        execution_key: str,
+        receipt_digest: str,
+        expires_at: datetime,
+    ) -> ActionPermit | None:
+        lock_state = """
+          SELECT organization_id::text, scope, mode, execution_mode, active_policy_digest,
+                 last_known_good_policy_digest, version, gate_epoch
+            FROM action_gate_rollout_states
+           WHERE organization_id = %s::uuid AND scope = %s
+           FOR UPDATE
+        """
+        insert_permit = """
+          INSERT INTO action_gate_permits (
+            organization_id, execution_key, scope, receipt_digest, gate_epoch, state, expires_at
+          ) VALUES (%s::uuid, %s, %s, %s, %s, 'reserved', %s::timestamptz)
+          ON CONFLICT (organization_id, execution_key) DO NOTHING
+        """
+        async with self.pool.connection() as conn:
+            async with conn.transaction():
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT set_config('app.organization_id', %s, true)", (organization_id,))
+                    await cursor.execute(lock_state, (organization_id, scope))
+                    row = await cursor.fetchone()
+                    if row is None:
+                        return None
+                    state = _rollout_state_from_row(row)
+                    if state.execution_mode != ExecutionMode.ALLOW_GUARDED or expires_at <= datetime.now(expires_at.tzinfo):
+                        return None
+                    await cursor.execute(insert_permit, (
+                        organization_id, execution_key, scope, receipt_digest, state.gate_epoch, expires_at,
+                    ))
+                    if cursor.rowcount != 1:
+                        return None
+        return ActionPermit(organization_id, scope, execution_key, receipt_digest, state.gate_epoch, expires_at)
+
+    async def consume_permit_once(self, permit: ActionPermit, *, now: datetime) -> bool:
+        """Fence a permit against any rollback that increased the scoped gate epoch."""
+        consume = """
+          WITH state AS (
+            SELECT gate_epoch, execution_mode
+              FROM action_gate_rollout_states
+             WHERE organization_id = %s::uuid AND scope = %s
+             FOR UPDATE
+          )
+          UPDATE action_gate_permits permit
+             SET state = 'committed', committed_at = now()
+            FROM state
+           WHERE permit.organization_id = %s::uuid
+             AND permit.execution_key = %s
+             AND permit.scope = %s
+             AND permit.state = 'reserved'
+             AND permit.expires_at > %s::timestamptz
+             AND permit.gate_epoch = %s
+             AND state.gate_epoch = %s
+             AND state.execution_mode = 'allow_guarded'
+        RETURNING permit.execution_key
+        """
+        async with self.pool.connection() as conn:
+            async with conn.transaction():
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT set_config('app.organization_id', %s, true)", (permit.organization_id,))
+                    await cursor.execute(consume, (
+                        permit.organization_id, permit.scope, permit.organization_id,
+                        permit.execution_key, permit.scope, now, permit.gate_epoch, permit.gate_epoch,
+                    ))
+                    return await cursor.fetchone() is not None
+
+    def trust_exchange_registry(self, organization_id: str) -> "TenantTrustExchangeRegistry":
+        return TenantTrustExchangeRegistry(self, organization_id)
+
+    async def revoke_trust_exchange_key(
+        self,
+        *,
+        organization_id: str,
+        issuer: str,
+        key_id: str,
+        reason_code: str,
+    ) -> bool:
+        """Immediately reject future exchange receipts for a key and emit durable audit metadata."""
+        revoke = """
+          UPDATE trust_exchange_signing_keys
+             SET status = 'revoked', revoked_at = now(), revocation_reason_code = %s,
+                 version = version + 1, updated_at = now()
+           WHERE organization_id = %s::uuid AND issuer = %s AND key_id = %s
+             AND status IN ('active','retiring')
+        RETURNING version
+        """
+        outbox = """
+          INSERT INTO outbox_events (organization_id, event_type, payload, idempotency_key)
+          VALUES (%s::uuid, 'trust_exchange.key_revoked', %s::jsonb, %s)
+          ON CONFLICT (organization_id, idempotency_key) DO NOTHING
+        """
+        async with self.pool.connection() as conn:
+            async with conn.transaction():
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT set_config('app.organization_id', %s, true)", (organization_id,))
+                    await cursor.execute(revoke, (reason_code, organization_id, issuer, key_id))
+                    row = await cursor.fetchone()
+                    if row is None:
+                        return False
+                    await cursor.execute(outbox, (
+                        organization_id,
+                        json.dumps({"version": 1, "issuer": issuer, "key_id": key_id, "reason_code": reason_code}),
+                        f"trust-exchange-key-revoked:{issuer}:{key_id}:{int(row[0])}",
+                    ))
+        return True
+
+
+class TenantTrustExchangeRegistry:
+    """RLS-bound public-key resolver. The organization is selected before signature verification.
+
+    The request-level selector is untrusted; ``Ed25519TrustExchangeVerifier`` subsequently checks
+    that the verified receipt is bound to this receiver organization and active relationship.
+    """
+
+    def __init__(self, repository: PostgresEnterpriseRepository, organization_id: str) -> None:
+        self._repository = repository
+        self._organization_id = organization_id
+
+    async def relationship(self, *, relationship_id: str) -> TrustRelationship | None:
+        query = """
+          SELECT issuer, receiver_organization_id::text, environment, allowed_action_types,
+                 max_receipt_lifetime_seconds
+            FROM trust_exchange_relationships
+           WHERE organization_id = %s::uuid AND relationship_id = %s AND status = 'active'
+        """
+        async with self._repository.pool.connection() as conn:
+            async with conn.transaction():
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT set_config('app.organization_id', %s, true)", (self._organization_id,))
+                    await cursor.execute(query, (self._organization_id, relationship_id))
+                    row = await cursor.fetchone()
+        if row is None or not isinstance(row[3], list) or not all(isinstance(item, str) for item in row[3]):
+            return None
+        return TrustRelationship(
+            relationship_id=relationship_id,
+            issuer=str(row[0]),
+            receiver_organization_id=str(row[1]),
+            environment=str(row[2]),
+            allowed_action_types=frozenset(row[3]),
+            max_receipt_lifetime=timedelta(seconds=int(row[4])),
+        )
+
+    async def resolve_key(self, *, issuer: str, key_id: str) -> Ed25519KeyRecord | None:
+        query = """
+          SELECT public_key_base64url, status, not_before, not_after, environment
+            FROM trust_exchange_signing_keys
+           WHERE organization_id = %s::uuid AND issuer = %s AND key_id = %s
+        """
+        async with self._repository.pool.connection() as conn:
+            async with conn.transaction():
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT set_config('app.organization_id', %s, true)", (self._organization_id,))
+                    await cursor.execute(query, (self._organization_id, issuer, key_id))
+                    row = await cursor.fetchone()
+        if row is None:
+            return None
+        import base64
+        try:
+            public_key = base64.urlsafe_b64decode(str(row[0]) + "=")
+            status = KeyStatus(str(row[1]))
+        except (ValueError, TypeError):
+            return None
+        return Ed25519KeyRecord(
+            issuer=issuer,
+            key_id=key_id,
+            public_key=public_key,
+            status=status,
+            not_before=row[2],
+            not_after=row[3],
+            environment=str(row[4]),
+        )
+
+
+def _rollout_state_from_row(row: Any) -> RolloutState:
+    return RolloutState(
+        organization_id=str(row[0]), scope=str(row[1]), mode=RolloutMode(str(row[2])),
+        execution_mode=ExecutionMode(str(row[3])), active_policy_digest=str(row[4]),
+        last_known_good_policy_digest=str(row[5]), version=int(row[6]), gate_epoch=int(row[7]),
+    )
+
+
+def _rollout_state_metadata(state: RolloutState) -> dict[str, object]:
+    return {
+        "mode": state.mode.value,
+        "execution_mode": state.execution_mode.value,
+        "active_policy_digest": state.active_policy_digest,
+        "last_known_good_policy_digest": state.last_known_good_policy_digest,
+        "version": state.version,
+        "gate_epoch": state.gate_epoch,
+    }

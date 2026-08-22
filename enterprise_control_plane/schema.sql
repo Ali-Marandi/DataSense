@@ -232,3 +232,96 @@ CREATE POLICY activation_trigger_execution_isolation ON activation_trigger_execu
   USING (organization_id::text = current_setting('app.organization_id', true));
 CREATE POLICY activation_kill_switch_isolation ON activation_kill_switches
   USING (organization_id::text = current_setting('app.organization_id', true));
+
+-- Action Gate rollout, permit fencing, and Trust Exchange registry are metadata-only.
+CREATE TABLE action_gate_rollout_states (
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  scope text NOT NULL CHECK (scope ~ '^[a-z][a-z0-9_.-]{2,127}$'),
+  mode text NOT NULL CHECK (mode IN ('shadow','limited_enforce','enforce','rollback_active','manual_kill')),
+  execution_mode text NOT NULL CHECK (execution_mode IN ('observe_only','allow_guarded','suppress_external')),
+  active_policy_digest char(71) NOT NULL CHECK (active_policy_digest ~ '^sha256:[a-f0-9]{64}$'),
+  last_known_good_policy_digest char(71) NOT NULL CHECK (last_known_good_policy_digest ~ '^sha256:[a-f0-9]{64}$'),
+  version bigint NOT NULL DEFAULT 0 CHECK (version >= 0),
+  gate_epoch bigint NOT NULL DEFAULT 0 CHECK (gate_epoch >= 0),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (organization_id, scope)
+);
+
+CREATE TABLE action_gate_rollback_events (
+  rollback_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  scope text NOT NULL,
+  trigger_type text NOT NULL CHECK (trigger_type ~ '^[a-z][a-z0-9_.-]{2,127}$'),
+  reason_code text NOT NULL CHECK (reason_code ~ '^[a-z][a-z0-9_.-]{2,127}$'),
+  trigger_evidence_digest char(71) NOT NULL CHECK (trigger_evidence_digest ~ '^sha256:[a-f0-9]{64}$'),
+  transition_status text NOT NULL CHECK (transition_status IN ('pending','committed','suppressed')),
+  previous_state jsonb NOT NULL DEFAULT '{}'::jsonb,
+  target_state jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  completed_at timestamptz,
+  UNIQUE (organization_id, scope, trigger_evidence_digest)
+);
+
+CREATE TABLE action_gate_permits (
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  execution_key text NOT NULL CHECK (execution_key ~ '^[a-zA-Z0-9_.:-]{8,128}$'),
+  scope text NOT NULL,
+  receipt_digest char(71) NOT NULL CHECK (receipt_digest ~ '^sha256:[a-f0-9]{64}$'),
+  gate_epoch bigint NOT NULL CHECK (gate_epoch >= 0),
+  state text NOT NULL CHECK (state IN ('reserved','committed','suppressed','expired')),
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  committed_at timestamptz,
+  PRIMARY KEY (organization_id, execution_key)
+);
+CREATE INDEX action_gate_permits_expiry_idx ON action_gate_permits (organization_id, expires_at)
+  WHERE state = 'reserved';
+
+CREATE TABLE trust_exchange_relationships (
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  relationship_id text NOT NULL CHECK (relationship_id ~ '^[a-zA-Z0-9_.:-]{8,128}$'),
+  issuer text NOT NULL CHECK (issuer ~ '^urn:datasense:issuer:[a-zA-Z0-9_.:-]{3,128}$'),
+  receiver_organization_id uuid NOT NULL REFERENCES organizations(id),
+  environment text NOT NULL CHECK (environment IN ('staging','production')),
+  allowed_action_types jsonb NOT NULL,
+  max_receipt_lifetime_seconds integer NOT NULL CHECK (max_receipt_lifetime_seconds BETWEEN 60 AND 900),
+  status text NOT NULL CHECK (status IN ('pending','active','suspended','revoked')),
+  version bigint NOT NULL DEFAULT 0 CHECK (version >= 0),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (organization_id, relationship_id)
+);
+
+CREATE TABLE trust_exchange_signing_keys (
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  issuer text NOT NULL,
+  key_id text NOT NULL CHECK (key_id ~ '^[a-zA-Z0-9_.:-]{3,128}$'),
+  algorithm text NOT NULL CHECK (algorithm = 'EdDSA'),
+  key_type text NOT NULL CHECK (key_type = 'OKP'),
+  curve text NOT NULL CHECK (curve = 'Ed25519'),
+  public_key_base64url text NOT NULL CHECK (public_key_base64url ~ '^[A-Za-z0-9_-]{43}$'),
+  status text NOT NULL CHECK (status IN ('active','retiring','revoked')),
+  not_before timestamptz NOT NULL,
+  not_after timestamptz NOT NULL,
+  revoked_at timestamptz,
+  revocation_reason_code text,
+  version bigint NOT NULL DEFAULT 0 CHECK (version >= 0),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (organization_id, issuer, key_id),
+  CHECK (not_after > not_before)
+);
+
+ALTER TABLE action_gate_rollout_states ENABLE ROW LEVEL SECURITY;
+ALTER TABLE action_gate_rollback_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE action_gate_permits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trust_exchange_relationships ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trust_exchange_signing_keys ENABLE ROW LEVEL SECURITY;
+CREATE POLICY action_gate_rollout_isolation ON action_gate_rollout_states
+  USING (organization_id::text = current_setting('app.organization_id', true));
+CREATE POLICY action_gate_rollback_isolation ON action_gate_rollback_events
+  USING (organization_id::text = current_setting('app.organization_id', true));
+CREATE POLICY action_gate_permit_isolation ON action_gate_permits
+  USING (organization_id::text = current_setting('app.organization_id', true));
+CREATE POLICY trust_exchange_relationship_isolation ON trust_exchange_relationships
+  USING (organization_id::text = current_setting('app.organization_id', true));
+CREATE POLICY trust_exchange_key_isolation ON trust_exchange_signing_keys
+  USING (organization_id::text = current_setting('app.organization_id', true));

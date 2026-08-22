@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     activation_alert_allowed_names: str = "activation_outbox_lag_critical"
     activation_alert_clock_skew_seconds: int = Field(default=300, ge=30, le=900)
 
+    # Trust Exchange accepts only Ed25519 receipts tied to this local receiver identity.
+    trust_exchange_receiver_organization_id: str | None = None
+    trust_exchange_rollback_allowed_scopes: str = "action.external"
+
     jwt_issuer: str = "http://localhost:8080"
     jwt_audience: str = "datasense-desktop"
     jwt_private_key_pem_file: Path | None = None
@@ -88,6 +92,8 @@ class Settings(BaseSettings):
             return
         if not self.redis_url:
             raise RuntimeError("production requires Redis for atomic TTL and replay protection")
+        if not self.trust_exchange_receiver_organization_id:
+            raise RuntimeError("production requires a Trust Exchange receiver organization ID")
         for name, path in (
             ("JWT private key", self.jwt_private_key_pem_file),
             ("JWT public key", self.jwt_public_key_pem_file),

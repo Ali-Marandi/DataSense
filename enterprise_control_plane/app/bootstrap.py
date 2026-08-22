@@ -1,6 +1,7 @@
 """Production composition root; all secrets are read from mounted files at process start."""
 from __future__ import annotations
 
+from .action_gate_rollback import TrustExchangeRollbackIngress
 from .activation_circuit import ActivationCircuitService
 from .activation_controller import ActivationAlertController
 from .auth import AuthorizationCodeService, TokenService
@@ -34,6 +35,18 @@ saml = SamlServiceProvider(
     require_encrypted_assertion=settings.saml_encrypted_assertion_required,
 )
 permission_service = PermissionService(repository)
+trust_exchange_rollback_ingress = None
+if settings.trust_exchange_receiver_organization_id:
+    trust_exchange_rollback_ingress = TrustExchangeRollbackIngress(
+        repository=repository,
+        registry_factory=repository.trust_exchange_registry,
+        replay_store=store,
+        receiver_organization_id=settings.trust_exchange_receiver_organization_id,
+        environment=settings.environment,
+        allowed_scopes=frozenset(
+            scope.strip() for scope in settings.trust_exchange_rollback_allowed_scopes.split(",") if scope.strip()
+        ),
+    )
 activation_alert_controller = ActivationAlertController(
     hmac_key=settings.required_secret("Activation alert HMAC key", settings.activation_alert_hmac_key_file),
     nonce_store=store,
@@ -50,6 +63,7 @@ app = create_app(ControlPlaneComponents(
     audit_sink=repository,
     quality_gate_service=QualityGateService(repository),
     activation_alert_controller=activation_alert_controller,
+    trust_exchange_rollback_ingress=trust_exchange_rollback_ingress,
     ready_check=repository.ready,
 ))
 

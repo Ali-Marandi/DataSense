@@ -10,6 +10,7 @@ from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response, st
 from fastapi.responses import RedirectResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from .action_gate_rollback import RollbackOutcome, TrustExchangeRollbackIngress
 from .activation_controller import ActivationAlertController, AlertVerificationError
 from .auth import AuthorizationCodeService, TokenService
 from .metrics import HTTP_DURATION_SECONDS, HTTP_REQUESTS
@@ -28,6 +29,7 @@ class ControlPlaneComponents:
     audit_sink: AuditSink
     quality_gate_service: QualityGateService | None = None
     activation_alert_controller: ActivationAlertController | None = None
+    trust_exchange_rollback_ingress: TrustExchangeRollbackIngress | None = None
     ready_check: Callable[[], Awaitable[bool]] | None = None
 
 
@@ -120,6 +122,23 @@ def create_app(components: ControlPlaneComponents) -> FastAPI:
         except AlertVerificationError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.reason_code) from exc
         return {"state": snapshot.state.value, "scope": snapshot.scope}
+
+    @app.post("/internal/v1/trust-exchange/rollback/{scope}", include_in_schema=False, status_code=status.HTTP_202_ACCEPTED)
+    async def receive_trust_exchange_rollback(scope: str, envelope: dict[str, str]) -> dict[str, str | int]:
+        ingress = components.trust_exchange_rollback_ingress
+        if ingress is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="trust exchange unavailable")
+        activation = await ingress.receive(scope=scope, envelope=envelope)
+        if activation.outcome == RollbackOutcome.TRIGGER_DENIED:
+            # Do not distinguish parse, trust-relationship, signature, or replay failures to callers.
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="trust exchange trigger denied")
+        if activation.outcome == RollbackOutcome.STATE_UNKNOWN:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="action gate state unavailable")
+        return {
+            "outcome": activation.outcome.value,
+            "rollback_id": activation.rollback_id or "",
+            "gate_epoch": activation.state.gate_epoch if activation.state is not None else -1,
+        }
 
     @app.post("/v1/auth/token", include_in_schema=False)
     async def token_exchange(
