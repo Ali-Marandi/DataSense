@@ -2,6 +2,7 @@ fastapi==0.115.12
 uvicorn[standard]==0.34.0
 pydantic-settings==2.7.1
 PyJWT[crypto]==2.10.1
+cryptography>=44,<51
 python-multipart==0.0.20
 python3-saml==1.16.0
 psycopg[binary,pool]==3.2.6
