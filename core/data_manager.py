@@ -14,6 +14,7 @@ from typing import Any, Iterable
 import numpy as np
 import pandas as pd
 
+from .decision_receipts import ActionIntent, DecisionPolicy, issue_decision_receipt
 from .evidence import build_evidence_payload, sign_evidence_payload
 from .lineage import LineageTrail
 from .governance import (
@@ -526,6 +527,30 @@ class DataManager:
             lineage=self.lineage,
         )
         return sign_evidence_payload(payload, signing_key, key_id)
+
+    def signed_decision_receipt(
+        self,
+        *,
+        action: ActionIntent,
+        policy: DecisionPolicy,
+        signing_key: bytes,
+        key_id: str,
+    ) -> dict[str, Any]:
+        """Create a signed, action-scoped trust decision from current governance evidence.
+
+        The inner evidence bundle and outer decision receipt use the same locally supplied key in
+        desktop mode. Enterprise deployments can replace this with a key resolver backed by the
+        Control Plane without changing the action or policy contract.
+        """
+        evidence_bundle = self.signed_evidence_bundle(signing_key, key_id)
+        return issue_decision_receipt(
+            evidence_bundle=evidence_bundle,
+            action=action,
+            policy=policy,
+            signing_key=signing_key,
+            key_id=key_id,
+            evidence_key_resolver=lambda candidate: signing_key if candidate == key_id else None,
+        )
 
     # --------------------------------------------------------------- versions
     def save_version(self, version_name: str) -> tuple[bool, str]:

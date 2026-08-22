@@ -29,5 +29,6 @@ def test_main_window_exposes_trust_center():
     app = QApplication.instance() or QApplication([])
     window = MainWindow()
     assert window.tabs.tabText(window.tabs.indexOf(window.trust_center_tab)) == "Trust Center"
+    assert window.trust_center_tab.receipt_export_button.text() == "Issue trust decision receipt"
     window.close()
     assert app is not None

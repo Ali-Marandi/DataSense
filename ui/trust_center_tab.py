@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.decision_receipts import ActionIntent, DecisionPolicy, write_decision_receipt
 from core.evidence import read_signing_key, write_evidence_bundle
 from core.governance import (
     DataContract,
@@ -172,6 +173,21 @@ class TrustCenterTab(QWidget):
         self.signed_export_button.clicked.connect(self.export_signed_evidence)
         top.addWidget(self.signed_export_button)
         root.addLayout(top)
+
+        receipt_row = QHBoxLayout()
+        receipt_row.addWidget(QLabel("Decision receipt action"))
+        self.receipt_action = QComboBox()
+        self.receipt_action.addItem("Internal HTML report", ("report.html", "internal", "internal_review"))
+        self.receipt_action.addItem("External CSV export", ("export.csv", "external", "external_share"))
+        self.receipt_action.addItem("AI agent recommendation", ("agent.recommendation", "autonomous", "agent_assisted_review"))
+        receipt_row.addWidget(self.receipt_action, 1)
+        self.receipt_export_button = QPushButton("Issue trust decision receipt")
+        self.receipt_export_button.setToolTip(
+            "Creates a signed, metadata-only decision receipt. External and autonomous actions require approval; no action is executed."
+        )
+        self.receipt_export_button.clicked.connect(self.export_decision_receipt)
+        receipt_row.addWidget(self.receipt_export_button)
+        root.addLayout(receipt_row)
 
         self.pii_table = QTableWidget(0, 6)
         self.pii_table.setHorizontalHeaderLabels(
@@ -390,6 +406,49 @@ class TrustCenterTab(QWidget):
             "Metadata-only evidence was signed and saved to:\n"
             f"{bundle_path}\n\nAlgorithm: {signature['algorithm']}\nKey ID: {signature['key_id']}\n"
             "Keep the signing key outside source control. Verification is available through core.evidence.",
+        )
+
+    def export_decision_receipt(self) -> None:
+        if self.manager.governance_report is None:
+            QMessageBox.information(self, "Run checks first", "Run quality checks before issuing a decision receipt.")
+            return
+        key_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choose HMAC signing key file",
+            "",
+            "Key files (*.key *.secret *.txt);;All files (*)",
+        )
+        if not key_path:
+            return
+        receipt_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save trust decision receipt",
+            "datasense-decision.receipt.json",
+            "JSON files (*.json)",
+        )
+        if not receipt_path:
+            return
+        action_type, risk, purpose_code = self.receipt_action.currentData()
+        try:
+            key = read_signing_key(key_path)
+            action = ActionIntent(action_type, risk, purpose_code)
+            receipt = self.manager.signed_decision_receipt(
+                action=action,
+                policy=DecisionPolicy(version="desktop-v1"),
+                signing_key=key,
+                key_id=Path(key_path).stem,
+            )
+            write_decision_receipt(receipt_path, receipt)
+        except (OSError, ValueError) as exc:
+            QMessageBox.critical(self, "Decision receipt failed", str(exc))
+            return
+        decision = receipt["payload"]["decision"]
+        QMessageBox.information(
+            self,
+            "Trust decision receipt issued",
+            f"Outcome: {decision['outcome']}\nReason: {', '.join(decision['reason_codes'])}\n\n"
+            f"Metadata-only receipt saved to:\n{receipt_path}\n\n"
+            "A receipt is proof of a decision; it does not execute an export or override a blocked/approval-required action.",
         )
 
     def _populate_table(self, widget: QTableWidget, frame) -> None:
