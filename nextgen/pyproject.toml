@@ -18,6 +18,10 @@ dependencies = [
 dev = ["pytest>=8.0"]
 package = ["pyinstaller>=6.0"]
 
+[tool.setuptools.packages.find]
+include = ["app*", "core*", "ui*"]
+exclude = ["installer*", "scripts*", "tests*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
