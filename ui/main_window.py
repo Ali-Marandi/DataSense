@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -10,6 +11,7 @@ from PyQt6.QtGui import QAction, QIcon, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
+    QInputDialog,
     QLabel,
     QMainWindow,
     QMessageBox,
@@ -18,6 +20,8 @@ from PyQt6.QtWidgets import (
 )
 
 from core.data_manager import DataManager, SUPPORTED_IMPORT
+from core.decision_receipts import ActionIntent, DecisionPolicy, action_is_authorized, write_decision_receipt
+from core.evidence import read_signing_key
 from core.version import APP_NAME, APP_VERSION, APP_TAGLINE, APP_PUBLISHER, APP_URL
 from core.project import load_project, save_project
 from core.report import ReportBuilder
@@ -139,6 +143,12 @@ class MainWindow(QMainWindow):
         self.act_export = action("&Export data...", self.export_data, "Ctrl+E", "Save active dataset")
         self.act_report = action("Export &report...", self.export_report, "Ctrl+R", "Generate HTML report")
         self.act_dashboard = action("Export &dashboard...", self.export_dashboard, "Ctrl+D", "Generate interactive dashboard")
+        self.act_verified_export = action(
+            "Export &verified artifact...",
+            self.export_verified_artifact,
+            "Ctrl+Shift+E",
+            "Create a report or dashboard only after local Trust Center gates allow it",
+        )
         self.act_theme = action("&Toggle theme", self.toggle_theme, "Ctrl+T", "Switch dark/light mode")
         self.act_about = action("&About", self.show_about, None, "Show application info")
         self.act_open_project = action("&Open project...", self.open_project, "Ctrl+O", "Load a saved project")
@@ -152,7 +162,7 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addActions([self.act_open_project, self.act_save_project])
         file_menu.addSeparator()
-        file_menu.addActions([self.act_export, self.act_report, self.act_dashboard])
+        file_menu.addActions([self.act_export, self.act_report, self.act_dashboard, self.act_verified_export])
         file_menu.addSeparator()
         file_menu.addAction(self.act_quit)
 
@@ -180,7 +190,7 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         toolbar.addActions([self.act_undo, self.act_redo])
         toolbar.addSeparator()
-        toolbar.addActions([self.act_export, self.act_report, self.act_dashboard, self.act_theme])
+        toolbar.addActions([self.act_export, self.act_report, self.act_dashboard, self.act_verified_export, self.act_theme])
         self.addToolBar(toolbar)
 
     def _build_status(self) -> None:
@@ -279,14 +289,8 @@ class MainWindow(QMainWindow):
         (self.statusBar().showMessage(message, 8000) if ok
          else QMessageBox.critical(self, "Could not save project", message))
 
-    def export_report(self) -> None:
-        if not self._require_data():
-            return
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Export report", "datasense-report.html", "HTML report (*.html)"
-        )
-        if not path:
-            return
+    def _save_report(self, path: str) -> None:
+        """Build a styled report from the active session without altering the dataset."""
         report = ReportBuilder(
             title=f"{APP_NAME} analysis report",
             subtitle=os.path.basename(self.manager.source or "in-memory dataset"),
@@ -317,6 +321,20 @@ class MainWindow(QMainWindow):
         steps = "; ".join(step.label for step in self.manager.history)
         report.add_text("Processing steps", steps or "No transformations applied.")
         report.save(path)
+
+    def export_report(self) -> None:
+        if not self._require_data():
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export report", "datasense-report.html", "HTML report (*.html)"
+        )
+        if not path:
+            return
+        try:
+            self._save_report(path)
+        except (OSError, ValueError) as exc:
+            QMessageBox.critical(self, "Report export failed", str(exc))
+            return
         self.statusBar().showMessage(f"Report exported to {path}", 8000)
 
     def export_dashboard(self) -> None:
@@ -334,6 +352,104 @@ class MainWindow(QMainWindow):
         )
         (self.statusBar().showMessage(message, 8000) if ok
          else QMessageBox.critical(self, "Dashboard failed", message))
+
+    def export_verified_artifact(self) -> None:
+        """Export a locally authorized report or dashboard with a signed trust receipt.
+
+        A verified export never transmits data and is available only after the current
+        Trust Center report passes its quality and schema gates.  The companion receipt
+        is metadata-only, expires automatically and remains useful for offline review.
+        """
+        if not self._require_data():
+            return
+        if self.manager.governance_report is None:
+            QMessageBox.information(
+                self,
+                "Run Trust Center checks first",
+                "Verified export requires current local quality checks. Open Trust Center, configure any "
+                "required rules and run the checks before exporting.",
+            )
+            return
+        labels = ["Analysis report (HTML)", "Interactive dashboard (HTML)"]
+        label, accepted = QInputDialog.getItem(
+            self, "Verified export", "Artifact", labels, 0, False
+        )
+        if not accepted:
+            return
+        is_report = label == labels[0]
+        action = ActionIntent(
+            "report.html" if is_report else "dashboard.html",
+            "internal",
+            "internal_review",
+        )
+        default_name = "datasense-verified-report.html" if is_report else "datasense-verified-dashboard.html"
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save verified artifact",
+            default_name,
+            "HTML files (*.html)",
+        )
+        if not path:
+            return
+        key_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choose local HMAC signing key",
+            "",
+            "Key files (*.key *.secret *.txt);;All files (*)",
+        )
+        if not key_path:
+            return
+        receipt_path = str(Path(path).with_suffix(Path(path).suffix + ".trust-receipt.json"))
+        try:
+            key = read_signing_key(key_path)
+            key_id = Path(key_path).stem
+            receipt = self.manager.signed_decision_receipt(
+                action=action,
+                policy=DecisionPolicy(version="desktop-v1"),
+                signing_key=key,
+                key_id=key_id,
+            )
+            write_decision_receipt(receipt_path, receipt)
+        except (OSError, ValueError) as exc:
+            QMessageBox.critical(self, "Verified export failed", str(exc))
+            return
+
+        resolver = lambda candidate: key if candidate == key_id else None
+        if not action_is_authorized(receipt, resolver, action):
+            decision = receipt["payload"]["decision"]
+            QMessageBox.warning(
+                self,
+                "Verified export not authorized",
+                "No artifact was written.\n\n"
+                f"Decision: {decision['outcome']}\n"
+                f"Reason: {', '.join(decision['reason_codes'])}\n\n"
+                f"A metadata-only receipt was saved to:\n{receipt_path}",
+            )
+            return
+
+        try:
+            if is_report:
+                self._save_report(path)
+                message = f"Verified report exported to {path}"
+            else:
+                ok, message = build_dashboard(
+                    self.manager.df,
+                    path,
+                    title=f"{APP_NAME} dashboard",
+                    subtitle=os.path.basename(self.manager.source or "in-memory dataset"),
+                )
+                if not ok:
+                    raise ValueError(message)
+        except (OSError, ValueError) as exc:
+            QMessageBox.critical(self, "Verified export failed", str(exc))
+            return
+        self.statusBar().showMessage(message, 8000)
+        QMessageBox.information(
+            self,
+            "Verified export complete",
+            f"{message}\n\nMetadata-only trust receipt:\n{receipt_path}\n\n"
+            "Keep the signing key outside source control; the receipt contains no raw dataset values.",
+        )
 
     def _log_result(self, title: str, frame) -> None:
         self.analysis_log = [(t, f) for t, f in self.analysis_log if t != title]

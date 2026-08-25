@@ -36,6 +36,7 @@ Windows 10/11 64-bit. Python is **not** required — everything is bundled.
 - KPI header: rows, columns, numeric columns, missing cells, duplicate rows, memory footprint.
 - Virtualised preview that stays responsive on large tables.
 - **Column quality profile**: dtype, non-null and missing counts, missing %, uniqueness, mean/std/min/max.
+- Export verified reports and dashboards with a portable, signed local trust receipt when governance controls pass.
 - Inline `pandas.query` filtering with a live status message.
 
 ### Prepare workspace
@@ -65,6 +66,7 @@ box, violin, pie and correlation heatmap — with grouping, zoom/pan toolbar and
 - **Data contracts** enforce not-null, uniqueness, numeric ranges, allowed values, regular-expression formats and data freshness with severity levels.
 - **Review-first quality controls**: recommended rules are explicit, editable and never mutate your data; every data mutation invalidates a prior quality result.
 - Export a portable **JSON audit report** and include the latest Trust Center evidence in the styled HTML analysis report.
+- Create a **verified HTML report or dashboard** only after current Trust Center gates allow it. DataSense stores a signed, metadata-only companion receipt next to the artifact for offline review; it never transmits the dataset.
 - `.dsproj` files preserve the data contract, while checks are deliberately re-run after restore to keep validation current.
 
 ### Reporting and projects
@@ -92,7 +94,7 @@ Use **File ▸ Load sample dataset** (`Ctrl+Shift+S`) to explore the app with a 
 ### Tests
 
 ```bash
-pip install pytest
+pip install -r enterprise_control_plane/requirements.txt
 pytest -q
 ```
 

@@ -23,6 +23,9 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            enterprise_control_plane/requirements.txt
 
       - name: Read product version
         shell: pwsh
@@ -36,6 +39,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install -r enterprise_control_plane/requirements.txt
           pip install pyinstaller pytest
 
       - name: Run regression suite
