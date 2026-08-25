@@ -1,0 +1,172 @@
+name: DataSense NextGen Windows Release
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "nextgen/**"
+      - ".github/workflows/nextgen-windows-release.yml"
+  push:
+    branches: [feature/nextgen-alpha-days-6-7]
+    tags: ["nextgen-v*"]
+    paths:
+      - "nextgen/**"
+      - ".github/workflows/nextgen-windows-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: datasense-nextgen-windows-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUTF8: "1"
+  QT_QPA_PLATFORM: offscreen
+  APP_NAME: DataSense
+
+jobs:
+  test-package-and-verify:
+    name: Test, package and verify Windows x64
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: nextgen/pyproject.toml
+
+      - name: Install project dependencies
+        shell: pwsh
+        working-directory: nextgen
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,package]"
+
+      - name: Run unit and UI smoke tests
+        shell: pwsh
+        working-directory: nextgen
+        run: python -m pytest
+
+      - name: Derive build version
+        id: version
+        shell: pwsh
+        run: |
+          $version = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}".TrimStart("nextgen-v") } else { "${{ github.sha }}".Substring(0, 7) }
+          "value=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Build one-folder Windows bundle and SBOM
+        shell: pwsh
+        working-directory: nextgen
+        run: python scripts/build_release.py --skip-tests --version "${{ steps.version.outputs.value }}"
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build installer
+        shell: pwsh
+        working-directory: nextgen
+        run: |
+          $compiler = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $compiler)) { throw "Inno Setup compiler was not installed." }
+          & $compiler "/DAppVersion=${{ steps.version.outputs.value }}" "/DSourceDir=$pwd\dist\$env:APP_NAME" "installer\DataSense.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Sign tagged release artifacts
+        if: startsWith(github.ref, 'refs/tags/nextgen-v')
+        shell: pwsh
+        working-directory: nextgen
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CERTIFICATE_BASE64) -or [string]::IsNullOrWhiteSpace($env:CERTIFICATE_PASSWORD) -or [string]::IsNullOrWhiteSpace($env:TIMESTAMP_URL)) {
+            throw "Code-signing secrets must be configured before a tagged release can be published."
+          }
+          $certificatePath = Join-Path $env:RUNNER_TEMP "datasense-signing.pfx"
+          [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
+          $signTool = Get-Command signtool.exe -ErrorAction SilentlyContinue
+          if ($null -eq $signTool) { throw "signtool.exe is unavailable on this runner." }
+          $assets = @(
+            "dist\$env:APP_NAME\$env:APP_NAME.exe",
+            "dist\installer\DataSense-${{ steps.version.outputs.value }}-windows-x64-setup.exe"
+          )
+          foreach ($asset in $assets) {
+            & $signTool.Source sign /fd SHA256 /f $certificatePath /p $env:CERTIFICATE_PASSWORD /tr $env:TIMESTAMP_URL /td SHA256 $asset
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            & $signTool.Source verify /pa /v $asset
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          Remove-Item $certificatePath -Force
+
+      - name: Finalize portable ZIP, checksums and release manifest
+        shell: pwsh
+        working-directory: nextgen
+        run: python scripts/finalize_release.py --version "${{ steps.version.outputs.value }}" --installer "dist\installer\DataSense-${{ steps.version.outputs.value }}-windows-x64-setup.exe"
+
+      - name: Smoke test packaged EXE
+        shell: pwsh
+        working-directory: nextgen
+        run: |
+          $exe = "dist\$env:APP_NAME\$env:APP_NAME.exe"
+          if (!(Test-Path $exe)) { throw "Expected EXE was not created." }
+          $process = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 5
+          if ($process.HasExited) { throw "Packaged EXE exited unexpectedly with code $($process.ExitCode)." }
+          Stop-Process -Id $process.Id -Force
+
+      - name: Verify final asset manifest and checksums
+        shell: pwsh
+        working-directory: nextgen
+        run: |
+          $manifest = Get-Content "dist\release-manifest.json" -Raw | ConvertFrom-Json
+          foreach ($asset in $manifest.assets.PSObject.Properties) {
+            $file = Join-Path "dist" $asset.Name
+            if (!(Test-Path $file)) { throw "Manifest asset is missing: $file" }
+            $actual = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
+            if ($actual -ne $asset.Value.sha256.ToLower()) { throw "Checksum mismatch: $file" }
+          }
+          if (!(Test-Path "dist\SHA256SUMS.txt") -or !(Test-Path "dist\sbom-python.json")) { throw "Release metadata is incomplete." }
+
+      - name: Upload verified Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: datasense-nextgen-windows-x64-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: nextgen/dist/
+
+  publish-release:
+    name: Publish signed tagged GitHub release
+    if: startsWith(github.ref, 'refs/tags/nextgen-v')
+    needs: test-package-and-verify
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download verified Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: datasense-nextgen-windows-x64-${{ github.sha }}
+          path: release-assets
+
+      - name: Publish signed release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          files: |
+            release-assets/**/*.zip
+            release-assets/**/*setup.exe
+            release-assets/**/SHA256SUMS.txt
+            release-assets/**/release-manifest.json
+            release-assets/**/sbom-python.json
