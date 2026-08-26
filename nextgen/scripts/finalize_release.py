@@ -36,7 +36,8 @@ def main() -> int:
 
     assets: dict[str, dict[str, int | str]] = {}
     for asset in (executable, portable_zip):
-        assets[asset.name] = {"sha256": sha256(asset), "bytes": asset.stat().st_size}
+        asset_key = asset.relative_to(DIST).as_posix()
+        assets[asset_key] = {"sha256": sha256(asset), "bytes": asset.stat().st_size}
     if args.installer:
         installer = args.installer.resolve()
         if not installer.exists():
