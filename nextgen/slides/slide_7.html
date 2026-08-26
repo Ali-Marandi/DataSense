@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600&family=Vazirmatn:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Vazirmatn', sans-serif;
+            background-color: #FFFFFF;
+            color: #334155;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .slide-container {
+            width: 1280px;
+            min-height: 720px;
+            background-color: #FFFFFF;
+            position: relative;
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            grid-template-rows: repeat(12, 1fr);
+            gap: 16px;
+            padding: 32px;
+            border: 2px solid #0F172A;
+        }
+        
+        /* Header Section */
+        .header-box {
+            grid-column: 1 / 13;
+            grid-row: 1 / 3;
+            border-bottom: 2px solid #0F172A;
+            display: flex;
+            align-items: flex-end;
+            padding-bottom: 16px;
+        }
+        h2 {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            font-size: 40px;
+            color: #0F172A;
+        }
+        .header-accent {
+            color: #0284C7;
+            margin-left: 16px;
+        }
+
+        /* Content Section */
+        .content-main {
+            grid-column: 6 / 13;
+            grid-row: 4 / 12;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        
+        .list-container {
+            list-style: none;
+        }
+        .list-item {
+            font-size: 26px;
+            line-height: 1.6;
+            margin-bottom: 32px;
+            position: relative;
+            padding-right: 32px;
+            border-right: 2px solid #0284C7;
+        }
+        .list-item::before {
+            content: '>';
+            font-family: 'JetBrains Mono', monospace;
+            color: #0284C7;
+            position: absolute;
+            right: 8px;
+            top: 0;
+            font-weight: 600;
+        }
+        
+        /* Visual Metric Section */
+        .metric-section {
+            grid-column: 1 / 5;
+            grid-row: 4 / 12;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .metric-box {
+            width: 100%;
+            height: 80%;
+            border: 4px solid #0F172A;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background-color: #FFFFFF;
+        }
+        
+        .metric-box::before, .metric-box::after {
+            content: '';
+            position: absolute;
+            width: 32px;
+            height: 32px;
+            border: 6px solid #0284C7;
+        }
+        .metric-box::before {
+            top: -4px; right: -4px;
+            border-bottom: none; border-left: none;
+        }
+        .metric-box::after {
+            bottom: -4px; left: -4px;
+            border-top: none; border-right: none;
+        }
+        
+        .metric-number {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 140px;
+            font-weight: 600;
+            color: #0F172A;
+            line-height: 1;
+        }
+        
+        .metric-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 32px;
+            font-weight: 600;
+            color: #0284C7;
+            letter-spacing: 4px;
+            margin-top: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="slide-container">
+        <div class="header-box">
+            <h2><span class="header-accent">#</span> کیفیت در عمل: ۵۴ آزمون سبز</h2>
+        </div>
+        
+        <div class="content-main">
+            <ul class="list-container">
+                <li class="list-item">مسیرهای <span style="font-family: 'JetBrains Mono', monospace; color: #0F172A;" dir="ltr">healthy, empty, duplicate column, non-finite, threshold, immutability</span> پوشش داده شدند.</li>
+                <li class="list-item">تست UI تضمین می‌کند readiness view مقدار نمونه یا دادهٔ خام را render نمی‌کند.</li>
+                <li class="list-item">تست کامل headless و بررسی نحوی، پیش از ارسال branch اجرا شده‌اند.</li>
+            </ul>
+        </div>
+        
+        <div class="metric-section">
+            <div class="metric-box">
+                <div class="metric-number">54</div>
+                <div class="metric-label">PASSED</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

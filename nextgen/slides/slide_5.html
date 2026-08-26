@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Vazirmatn:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Vazirmatn', sans-serif;
+            background-color: #FFFFFF;
+            color: #334155;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .slide-container {
+            width: 1280px;
+            min-height: 720px; /* keep as required */
+            background-color: #FFFFFF;
+            position: relative;
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            grid-template-rows: repeat(12, 1fr);
+            gap: 12px; /* reduced gap to save vertical space */
+            padding: 16px; /* reduced from 32px to remove overflow */
+            border: 2px solid #0F172A;
+        }
+        
+        /* Header Section */
+        .header-box {
+            grid-column: 1 / 13;
+            grid-row: 1 / 3;
+            border-bottom: 2px solid #0F172A;
+            display: flex;
+            align-items: flex-end;
+            padding-bottom: 16px; /* must keep title spacing */
+        }
+        h2 {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            font-size: 40px;
+            color: #0F172A;
+        }
+        .header-accent {
+            color: #0284C7;
+            margin-left: 16px;
+        }
+
+        /* Right Column: Text Content */
+        .content-text {
+            grid-column: 7 / 13;
+            grid-row: 4 / 12;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 24px; /* reduced from 40px */
+        }
+        
+        .text-block {
+            position: relative;
+            padding-right: 16px; /* slightly reduced */
+            border-right: 4px solid #0284C7;
+        }
+        
+        .text-block p {
+            font-size: 26px;
+            line-height: 1.6;
+            color: #334155;
+        }
+        
+        .text-block strong {
+            font-family: 'JetBrains Mono', monospace;
+            color: #0F172A;
+            font-weight: 600;
+        }
+
+        /* Left Column: Structural Visual */
+        .content-visual {
+            grid-column: 1 / 6;
+            grid-row: 4 / 11;
+            border: 2px solid #0F172A;
+            padding: 16px; /* reduced from 32px */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            position: relative;
+            background-color: rgba(15, 23, 42, 0.02);
+        }
+        
+        /* Bracketed visual containers */
+        .content-visual::before, .content-visual::after {
+            content: '';
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            border: 4px solid #0284C7;
+        }
+        .content-visual::before {
+            top: -2px; right: -2px;
+            border-bottom: none; border-left: none;
+        }
+        .content-visual::after {
+            bottom: -2px; left: -2px;
+            border-top: none; border-right: none;
+        }
+
+        .code-line {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 22px;
+            color: #0F172A;
+            margin-bottom: 12px; /* reduced from 24px */
+            direction: ltr;
+            text-align: left;
+            border-bottom: 1px solid rgba(15, 23, 42, 0.2);
+            padding-bottom: 8px;
+        }
+        
+        .code-line:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
+        
+        .code-keyword {
+            color: #0284C7;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="slide-container">
+        <div class="header-box">
+            <h2><span class="header-accent">#</span> روز هشتم: قرارداد تحلیل را تثبیت کردیم</h2>
+        </div>
+        
+        <div class="content-text">
+            <div class="text-block">
+                <p>ورودی فقط <strong>pandas.DataFrame</strong> با ستون‌های یکتا؛ خطاهای مرزی صریح و قابل‌آزمون هستند.</p>
+            </div>
+            <div class="text-block">
+                <p>تنظیمات <strong>immutable</strong> برای IQR، cardinality، حداقل مشاهده و readiness threshold.</p>
+            </div>
+            <div class="text-block">
+                <p>خروجی <strong>deterministic</strong> و عدم mutation ورودی، پایهٔ review و regression test را تقویت می‌کند.</p>
+            </div>
+        </div>
+        
+        <div class="content-visual">
+            <div class="code-line"><span class="code-keyword">[Contract]</span> ProcessingModule</div>
+            <div class="code-line"><span class="code-keyword">Input:</span> pd.DataFrame</div>
+            <div class="code-line"><span class="code-keyword">Output:</span> ProcessingResult</div>
+            <div class="code-line"><span class="code-keyword">State:</span> Immutable</div>
+            <div class="code-line"><span class="code-keyword">Mutation:</span> None</div>
+            <div class="code-line"><span class="code-keyword">Execution:</span> Deterministic</div>
+        </div>
+    </div>
+</body>
+</html>

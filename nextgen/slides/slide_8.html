@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Vazirmatn:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Vazirmatn', sans-serif;
+            background-color: #FFFFFF;
+            color: #334155;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .slide-container {
+            width: 1280px;
+            min-height: 720px;
+            background-color: #FFFFFF;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            padding: 20px;
+            border: 2px solid #0F172A;
+        }
+        /* Header Section */
+        .header-box {
+            border-bottom: 2px solid #0F172A;
+            display: flex;
+            align-items: flex-end;
+            padding-bottom: 16px; /* must not be changed */
+        }
+        h2 {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            font-size: 40px;
+            color: #0F172A;
+        }
+        .header-accent {
+            color: #0284C7;
+            margin-left: 16px;
+        }
+
+        /* Main row: two columns */
+        .main {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+        }
+
+        /* Text Content Section */
+        .content-text {
+            width: 58%;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            padding-right: 12px;
+        }
+        .list-container { list-style: none; }
+        .list-item {
+            font-size: 26px;
+            line-height: 1.6;
+            margin-bottom: 16px; /* reduced from 32 */
+            position: relative;
+            padding-right: 20px;
+            border-right: 2px solid #0284C7;
+        }
+        .list-item::before {
+            content: '>';
+            font-family: 'JetBrains Mono', monospace;
+            color: #0284C7;
+            position: absolute;
+            right: 8px;
+            top: 0;
+            font-weight: 600;
+        }
+        .code-inline {
+            font-family: 'JetBrains Mono', monospace;
+            color: #0F172A;
+            font-weight: 600;
+            direction: ltr;
+            display: inline-block;
+        }
+
+        /* Visual Log Section */
+        .log-visual {
+            width: 42%;
+            border: 2px solid #0F172A;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+        .log-visual::before {
+            content: '';
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            width: 32px;
+            height: 32px;
+            border-right: 4px solid #0284C7;
+            border-top: 4px solid #0284C7;
+        }
+        .log-header {
+            background-color: #0F172A;
+            color: #FFFFFF;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 18px;
+            padding: 8px 12px;
+            direction: ltr;
+            text-align: left;
+        }
+        .log-body {
+            padding: 12px; /* reduced from 24 */
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 16px;
+            line-height: 1.8;
+            color: #334155;
+            direction: ltr;
+            text-align: left;
+            background-color: rgba(15, 23, 42, 0.02);
+        }
+        .redacted {
+            background-color: #0284C7;
+            color: #FFFFFF;
+            padding: 2px 6px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="slide-container">
+        <div class="header-box">
+            <h2><span class="header-accent">#</span> عیب‌یابی بدون data leak</h2>
+        </div>
+
+        <div class="main">
+            <div class="log-visual">
+                <div class="log-header">errors.jsonl</div>
+                <div class="log-body">
+                    {"schema": "datasense.error/v1",<br>
+                    &nbsp;"error_id": "e4a2b...",<br>
+                    &nbsp;"component": "ui.import",<br>
+                    &nbsp;"message": "Failed to load <span class=\"redacted\">[REDACTED_PATH]</span> for user <span class=\"redacted\">[REDACTED_EMAIL]</span>"}<br>
+                    <br>
+                    <span style="color: #94A3B8;">// Telemetry: opt-in (default: false)</span>
+                </div>
+            </div>
+
+            <div class="content-text">
+                <ul class="list-container">
+                    <li class="list-item">فایل <span class="code-inline">datasense.jsonl</span> رویدادهای ساختاریافته و چرخشی را به‌صورت محلی نگه می‌دارد.</li>
+                    <li class="list-item">فایل <span class="code-inline">errors.jsonl</span> خطاها را با Error ID، نام component و متن Redact شده ثبت می‌کند.</li>
+                    <li class="list-item">مسیرهای محلی و emailهای رایج در لایهٔ ثبت خطا به‌طور خودکار Redact می‌شوند؛ ارسال telemetry نیز پیش‌فرض غیرفعال است.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

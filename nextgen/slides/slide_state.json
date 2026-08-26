@@ -1,0 +1,133 @@
+{
+  "project_info": {
+    "title": "مسئله: تحلیل سریع، بدون ترک دستگاه",
+    "created": 1787780440.303,
+    "last_updated": 1787780799.13,
+    "total_slides": 11
+  },
+  "slides": [
+    {
+      "id": "slide_1",
+      "state": "edited",
+      "pageNum": 1
+    },
+    {
+      "id": "slide_2",
+      "state": "edited",
+      "pageNum": 2
+    },
+    {
+      "id": "slide_3",
+      "state": "edited",
+      "pageNum": 3
+    },
+    {
+      "id": "slide_4",
+      "state": "edited",
+      "pageNum": 4
+    },
+    {
+      "id": "slide_5",
+      "state": "edited",
+      "pageNum": 5
+    },
+    {
+      "id": "slide_6",
+      "state": "edited",
+      "pageNum": 6
+    },
+    {
+      "id": "slide_7",
+      "state": "edited",
+      "pageNum": 7
+    },
+    {
+      "id": "slide_8",
+      "state": "edited",
+      "pageNum": 8
+    },
+    {
+      "id": "slide_9",
+      "state": "edited",
+      "pageNum": 9
+    },
+    {
+      "id": "slide_10",
+      "state": "edited",
+      "pageNum": 10
+    },
+    {
+      "id": "slide_11",
+      "state": "edited",
+      "pageNum": 11
+    }
+  ],
+  "outline": [
+    {
+      "id": "slide_1",
+      "title": "مسئله: تحلیل سریع، بدون ترک دستگاه",
+      "summary": "توضیح نیاز به insight سریع و نگه داشتن داده‌های خام در فرایند محلی.",
+      "image_plan": "Use a suitable image if needed"
+    },
+    {
+      "id": "slide_2",
+      "title": "Alpha بر سه ستون بنا شده است",
+      "summary": "معرفی ستون‌های Local-first، Trust by design و Observable.",
+      "image_plan": "Use a suitable image if needed"
+    },
+    {
+      "id": "slide_3",
+      "title": "گردش کار کاربر: از داده تا artifact",
+      "summary": "مراحل Explore، Prepare & Validate و Deliver در گردش کار.",
+      "image_plan": "Use a suitable image if needed"
+    },
+    {
+      "id": "slide_4",
+      "title": "Data readiness قبل از تحلیل عمیق",
+      "summary": "معرفی ماژول DataReadinessInsightsModule و ویژگی‌های توصیفی آن.",
+      "image_plan": "Use a suitable image if needed"
+    },
+    {
+      "id": "slide_5",
+      "title": "روز هشتم: قرارداد تحلیل را تثبیت کردیم",
+      "summary": "تشریح دستاوردهای روز هشتم در تثبیت قرارداد تحلیل و تنظیمات.",
+      "image_plan": "Use a suitable image if needed"
+    },
+    {
+      "id": "slide_6",
+      "title": "روز نهم: diagnostics دقیق‌تر و مقاوم‌تر شد",
+      "summary": "بهبودهای روز نهم شامل missingness نسبت‌محور و مدیریت مقادیر non-finite.",
+      "image_plan": "Use a suitable image if needed"
+    },
+    {
+      "id": "slide_7",
+      "title": "کیفیت در عمل: ۵۴ آزمون سبز",
+      "summary": "گزارش موفقیت در اجرای ۵۴ آزمون و پوشش مسیرهای مختلف.",
+      "image_plan": "Use a suitable image if needed"
+    },
+    {
+      "id": "slide_8",
+      "title": "عیب‌یابی بدون data leak",
+      "summary": "توضیح سیستم ثبت خطا و logهای چرخشی بدون افشای داده‌های حساس.",
+      "image_plan": "Use a suitable image if needed"
+    },
+    {
+      "id": "slide_9",
+      "title": "برنامهٔ هفتهٔ دوم: قابلیت، اعتماد، پذیرش",
+      "summary": "برنامهٔ روزانهٔ هفتهٔ دوم برای افزایش قابلیت اعتماد و پذیرش.",
+      "image_plan": "Use a suitable image if needed"
+    },
+    {
+      "id": "slide_10",
+      "title": "مسیر Alpha به بتا",
+      "summary": "اقدامات لازم برای ارتقای نسخه از Alpha به بتا.",
+      "image_plan": "Use a suitable image if needed"
+    },
+    {
+      "id": "slide_11",
+      "title": "Alpha آمادهٔ ارزیابی کنترل‌شده است",
+      "summary": "دعوت به دریافت و ارزیابی نسخهٔ Alpha با داده‌های غیرحساس.",
+      "image_plan": "Use a suitable image if needed"
+    }
+  ]
+}

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600&family=Vazirmatn:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Vazirmatn', sans-serif;
+            background-color: #FFFFFF;
+            color: #334155;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .slide-container {
+            width: 1280px;
+            min-height: 720px;
+            background-color: #FFFFFF;
+            position: relative;
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            grid-template-rows: repeat(12, 1fr);
+            gap: 16px;
+            padding: 32px;
+            border: 2px solid #0F172A;
+        }
+        /* Structural Lines / Grid Overlay */
+        .slide-container::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-image: 
+                linear-gradient(to right, rgba(15, 23, 42, 0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(15, 23, 42, 0.05) 1px, transparent 1px);
+            background-size: calc((1280px - 64px + 16px) / 12) calc((720px - 64px + 16px) / 12);
+            background-position: 32px 32px;
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        .content-box {
+            grid-column: 2 / 12;
+            grid-row: 4 / 10;
+            border: 2px solid #0F172A;
+            background-color: #FFFFFF;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 48px;
+            position: relative;
+        }
+        
+        /* Bracketed visual containers */
+        .content-box::before, .content-box::after {
+            content: '';
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            border: 4px solid #0284C7;
+        }
+        .content-box::before {
+            top: -2px; right: -2px;
+            border-bottom: none; border-left: none;
+        }
+        .content-box::after {
+            bottom: -2px; left: -2px;
+            border-top: none; border-right: none;
+        }
+
+        h1 {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            font-size: 64px;
+            color: #0F172A;
+            margin-bottom: 24px;
+            line-height: 1.2;
+            text-align: right;
+            direction: ltr; /* Keep English brand name LTR */
+        }
+        h3 {
+            font-size: 32px;
+            font-weight: 400;
+            color: #0284C7;
+            line-height: 1.5;
+            text-align: right;
+            border-right: 4px solid #0284C7;
+            padding-right: 16px;
+        }
+        
+        .version-badge {
+            position: absolute;
+            top: -24px;
+            left: 48px;
+            background-color: #0F172A;
+            color: #FFFFFF;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 16px;
+            padding: 8px 16px;
+            border: 2px solid #0F172A;
+        }
+    </style>
+</head>
+<body>
+    <div class="slide-container">
+        <div class="content-box">
+            <div class="version-badge">v0.1.0-alpha</div>
+            <h1>DataSense NextGen Alpha</h1>
+            <h3>تحلیل محلیِ قابل‌اعتماد؛ خروجی تأییدشده؛ توسعهٔ هفتهٔ دوم</h3>
+        </div>
+    </div>
+</body>
+</html>

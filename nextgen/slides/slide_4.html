@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600&family=Vazirmatn:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Vazirmatn', sans-serif;
+            background-color: #FFFFFF;
+            color: #334155;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .slide-container {
+            width: 1280px;
+            min-height: 720px;
+            background-color: #FFFFFF;
+            position: relative;
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            grid-template-rows: repeat(12, 1fr);
+            gap: 16px;
+            padding: 32px;
+            border: 2px solid #0F172A;
+        }
+        
+        /* Header Section */
+        .header-box {
+            grid-column: 1 / 13;
+            grid-row: 1 / 3;
+            border-bottom: 2px solid #0F172A;
+            display: flex;
+            align-items: flex-end;
+            padding-bottom: 16px;
+        }
+        h2 {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            font-size: 40px;
+            color: #0F172A;
+        }
+        .header-accent {
+            color: #0284C7;
+            margin-left: 16px;
+        }
+
+        /* Content Section */
+        .content-main {
+            grid-column: 1 / 8;
+            grid-row: 4 / 12;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        
+        .data-point {
+            margin-bottom: 32px;
+            padding-right: 24px;
+            border-right: 4px solid #0F172A;
+            position: relative;
+        }
+        
+        .data-point::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: -4px;
+            width: 16px;
+            height: 4px;
+            background-color: #0284C7;
+        }
+
+        .data-point-text {
+            font-size: 26px;
+            line-height: 1.6;
+        }
+        
+        .code-inline {
+            font-family: 'JetBrains Mono', monospace;
+            color: #0284C7;
+            font-weight: 600;
+            direction: ltr;
+            display: inline-block;
+        }
+
+        /* Graphic Section */
+        .graphic-section {
+            grid-column: 9 / 13;
+            grid-row: 4 / 12;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .score-box {
+            width: 100%;
+            height: 240px;
+            border: 2px solid #0F172A;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            background-color: #FFFFFF;
+        }
+        
+        .score-box::before, .score-box::after {
+            content: '';
+            position: absolute;
+            width: 32px;
+            height: 32px;
+            border: 4px solid #0284C7;
+        }
+        .score-box::before {
+            top: -2px; right: -2px;
+            border-bottom: none; border-left: none;
+        }
+        .score-box::after {
+            bottom: -2px; left: -2px;
+            border-top: none; border-right: none;
+        }
+        
+        .score-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 80px;
+            font-weight: 600;
+            color: #0F172A;
+            line-height: 1;
+        }
+        
+        .score-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 20px;
+            color: #0284C7;
+            margin-top: 8px;
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div class="slide-container">
+        <div class="header-box">
+            <h2><span class="header-accent">#</span> Data readiness قبل از تحلیل عمیق</h2>
+        </div>
+        
+        <div class="content-main">
+            <div class="data-point">
+                <div class="data-point-text">
+                    ماژول <span class="code-inline">DataReadinessInsightsModule</span> مواردی چون missingness، identifierهای احتمالی و outlierهای IQR را به‌صورت محلی بررسی می‌کند.
+                </div>
+            </div>
+            
+            <div class="data-point">
+                <div class="data-point-text">
+                    امتیاز ۰ تا ۱۰۰ با آستانهٔ قابل‌تنظیم، فقط یک <strong>شاخص آمادگی</strong> است و یک تصمیم خودکار برای حذف یا تغییر داده نیست.
+                </div>
+            </div>
+            
+            <div class="data-point">
+                <div class="data-point-text">
+                    هشدارها تنها نام ستون و شمارش aggregate را نشان می‌دهند و هیچ‌گونه value حساس یا دادهٔ خامی را افشا نمی‌کنند.
+                </div>
+            </div>
+        </div>
+        
+        <div class="graphic-section">
+            <div class="score-box">
+                <div class="score-value">0-100</div>
+                <div class="score-label">READINESS SCORE</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

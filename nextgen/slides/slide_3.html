@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600&family=Vazirmatn:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Vazirmatn', sans-serif;
+            background-color: #FFFFFF;
+            color: #334155;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .slide-container {
+            width: 1280px;
+            min-height: 720px;
+            background-color: #FFFFFF;
+            position: relative;
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            grid-template-rows: repeat(12, 1fr);
+            gap: 16px;
+            padding: 32px;
+            border: 2px solid #0F172A;
+        }
+        
+        /* Header Section */
+        .header-box {
+            grid-column: 1 / 13;
+            grid-row: 1 / 3;
+            border-bottom: 2px solid #0F172A;
+            display: flex;
+            align-items: flex-end;
+            padding-bottom: 16px;
+        }
+        h2 {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            font-size: 40px;
+            color: #0F172A;
+        }
+        .header-accent {
+            color: #0284C7;
+            margin-left: 16px;
+        }
+
+        /* Pillars Section */
+        .pillars-container {
+            grid-column: 1 / 13;
+            grid-row: 5 / 11;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 32px;
+        }
+        
+        .pillar-box {
+            border-top: 4px solid #0F172A;
+            padding-top: 24px;
+            position: relative;
+        }
+        
+        .pillar-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 24px;
+            height: 24px;
+            border-right: 4px solid #0284C7;
+            border-top: 4px solid #0284C7;
+            margin-top: -4px; /* Align with the top border */
+        }
+
+        .pillar-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 28px;
+            font-weight: 600;
+            color: #0284C7;
+            margin-bottom: 16px;
+            direction: ltr;
+            text-align: left;
+        }
+        
+        .pillar-text {
+            font-size: 24px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="slide-container">
+        <div class="header-box">
+            <h2><span class="header-accent">#</span> Alpha بر سه ستون بنا شده است</h2>
+        </div>
+        
+        <div class="pillars-container">
+            <div class="pillar-box">
+                <div class="pillar-title">Local-first</div>
+                <div class="pillar-text">
+                    داده‌های خام (CSV)، پیش‌نمایش (preview)، پروفایل و تحلیل‌ها همگی در فرایند محلی باقی می‌مانند و به سرور منتقل نمی‌شوند.
+                </div>
+            </div>
+            
+            <div class="pillar-box">
+                <div class="pillar-title">Trust by design</div>
+                <div class="pillar-text">
+                    خروجی HTML نهایی تنها پس از عبور موفق از کنترل کیفیت و همراه با یک رسید (receipt) امضاشده ساخته می‌شود.
+                </div>
+            </div>
+            
+            <div class="pillar-box">
+                <div class="pillar-title">Observable</div>
+                <div class="pillar-text">
+                    ثبت لاگ‌های چرخشی و شناسه‌های خطای قابل‌پیگیری (error reference)، عیب‌یابی را بدون افشای داده‌های خام ممکن می‌سازد.
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
