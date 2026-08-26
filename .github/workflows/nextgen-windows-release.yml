@@ -189,7 +189,7 @@ jobs:
             ## Security notice
             This Alpha release is **unsigned** unless its assets display a trusted Windows code-signing certificate. Windows may show an unknown-publisher warning. Verify `SHA256SUMS.txt` before use; this prerelease is not intended for production deployment.
           files: |
-            release-assets/**/*.zip
+            release-assets/**/DataSense-*-windows-x64-portable.zip
             release-assets/**/*setup.exe
             release-assets/**/SHA256SUMS.txt
             release-assets/**/release-manifest.json
