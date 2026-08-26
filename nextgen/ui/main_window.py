@@ -24,6 +24,8 @@ from PyQt6.QtWidgets import (
 )
 
 from app.composition import Services
+from core.analysis.contracts import ProcessingContext
+from core.analysis.data_readiness import DataReadinessInsightsModule
 from core.data.model import DatasetProfile
 from core.governance.contracts import QualityReport
 from core.telemetry.events import TelemetryEvent
@@ -43,6 +45,7 @@ class MainWindow(QMainWindow):
     def __init__(self, services: Services) -> None:
         super().__init__()
         self.services = services
+        self.logger = services.observability.logger.getChild("ui")
         self._last_receipt_path: Path | None = None
         self.setWindowTitle("DataSense Alpha — Trusted local analytics")
         self.resize(1280, 820)
@@ -79,12 +82,15 @@ class MainWindow(QMainWindow):
         sample_action.triggered.connect(self._load_sample)
         check_action = QAction("Run checks", self)
         check_action.triggered.connect(self._run_quality_checks)
+        insights_action = QAction("Data readiness", self)
+        insights_action.triggered.connect(self._run_data_readiness_insights)
         export_action = QAction("Verified export", self)
         export_action.triggered.connect(self._export_verified)
         toolbar.addAction(open_action)
         toolbar.addAction(sample_action)
         toolbar.addSeparator()
         toolbar.addAction(check_action)
+        toolbar.addAction(insights_action)
         toolbar.addAction(export_action)
         self.addToolBar(toolbar)
 
@@ -180,9 +186,15 @@ class MainWindow(QMainWindow):
             "Prepare & Validate",
             "Run the active local data contract. Critical and high-severity findings block verified delivery; advisory findings remain visible.",
         )
+        action_row = QHBoxLayout()
         button = QPushButton("Run quality checks")
         button.clicked.connect(self._run_quality_checks)
-        layout.addWidget(button, alignment=Qt.AlignmentFlag.AlignLeft)
+        insights_button = QPushButton("Run data readiness insights")
+        insights_button.clicked.connect(self._run_data_readiness_insights)
+        action_row.addWidget(button)
+        action_row.addWidget(insights_button)
+        action_row.addStretch()
+        layout.addLayout(action_row)
         self.quality_summary = QLabel("No checks have been run for the active dataset.")
         self.quality_summary.setObjectName("qualitySummary")
         self.quality_summary.setWordWrap(True)
@@ -196,6 +208,15 @@ class MainWindow(QMainWindow):
         self.quality_table.setAlternatingRowColors(True)
         self.quality_table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.quality_table, 1)
+        insights_label = QLabel("LOCAL DATA READINESS INSIGHTS")
+        insights_label.setObjectName("sectionTitle")
+        layout.addWidget(insights_label)
+        self.insights_view = QTextEdit()
+        self.insights_view.setObjectName("insightsView")
+        self.insights_view.setReadOnly(True)
+        self.insights_view.setMaximumHeight(148)
+        self.insights_view.setPlainText("Run data readiness insights to see local aggregate diagnostics.")
+        layout.addWidget(self.insights_view)
         return page
 
     def _deliver_page(self) -> QWidget:
@@ -230,7 +251,9 @@ class MainWindow(QMainWindow):
         try:
             self._set_dataset(self.services.data.load_csv(path), Path(path).name)
         except (OSError, ValueError) as exc:
-            QMessageBox.critical(self, "Import failed", str(exc))
+            error = self.services.observability.error_monitor.record_exception(exc, component="ui.csv_import")
+            self.logger.warning("csv_import_failed error_id=%s", error.error_id)
+            QMessageBox.critical(self, "Import failed", f"The file could not be imported. Error reference: {error.error_id}")
 
     def _load_sample(self) -> None:
         self._set_dataset(self.services.data.sample_dataset(), "DataSense sample operations dataset")
@@ -241,6 +264,8 @@ class MainWindow(QMainWindow):
         self.services.state.quality_report = None
         self._last_receipt_path = None
         self._render_state()
+        source_kind = "sample" if label.startswith("DataSense sample") else "local_file"
+        self.logger.info("dataset_loaded source_kind=%s rows=%d columns=%d", source_kind, len(frame), len(frame.columns))
         self.statusBar().showMessage(f"Loaded {label} locally · run validation before verified export")
 
     def _run_quality_checks(self) -> None:
@@ -259,7 +284,36 @@ class MainWindow(QMainWindow):
             ),
             consent=False,
         )
+        self.logger.info("quality_checks_completed status=%s rules=%d", report.summary()["status"], len(report.results))
         self.statusBar().showMessage("Quality checks completed locally")
+
+    def _run_data_readiness_insights(self) -> None:
+        frame = self.services.state.frame
+        if frame is None:
+            QMessageBox.information(self, "No dataset", "Open data before running readiness insights.")
+            return
+        try:
+            result = DataReadinessInsightsModule().process(frame, context=ProcessingContext())
+        except Exception as exc:
+            error = self.services.observability.error_monitor.record_exception(exc, component="ui.data_readiness")
+            self.logger.error("data_readiness_failed error_id=%s", error.error_id)
+            QMessageBox.critical(self, "Readiness analysis failed", f"Local analysis could not complete. Error reference: {error.error_id}")
+            return
+        summary = result.summary
+        lines = [
+            f"Readiness score: {summary['readiness_score']} / 100",
+            f"Ready for further local analysis: {'YES' if summary['ready'] else 'REVIEW REQUIRED'}",
+            f"Columns with missing values: {summary['columns_with_missing']}",
+            f"High-cardinality columns: {summary['high_cardinality_columns']}",
+            f"IQR outlier observations: {summary['outlier_cells']}",
+        ]
+        if result.warnings:
+            lines.extend(["", "Warnings:", *[f"• {warning}" for warning in result.warnings]])
+        else:
+            lines.extend(["", "No aggregate readiness warnings were detected."])
+        self.insights_view.setPlainText("\n".join(lines))
+        self.logger.info("data_readiness_completed score=%s warnings=%d", summary["readiness_score"], len(result.warnings))
+        self.statusBar().showMessage("Data readiness insights computed locally")
 
     def _export_verified(self) -> None:
         entitlement = self.services.feature_gate.decision("verified_export")
@@ -283,13 +337,19 @@ class MainWindow(QMainWindow):
         if not path:
             return
         profile = self.services.data.profile(frame)
-        result = self.services.delivery.export_html(
-            path,
-            frame,
-            profile,
-            self.services.state.quality_report,
-            signing_provider=self.services.signing_provider,
-        )
+        try:
+            result = self.services.delivery.export_html(
+                path,
+                frame,
+                profile,
+                self.services.state.quality_report,
+                signing_provider=self.services.signing_provider,
+            )
+        except Exception as exc:
+            error = self.services.observability.error_monitor.record_exception(exc, component="ui.verified_export")
+            self.logger.error("verified_export_failed error_id=%s", error.error_id)
+            QMessageBox.critical(self, "Verified export failed", f"No artifact was created. Error reference: {error.error_id}")
+            return
         self._last_receipt_path = result.receipt_path
         if result.decision.approved:
             message = (
@@ -308,7 +368,13 @@ class MainWindow(QMainWindow):
         if self._last_receipt_path is None:
             QMessageBox.information(self, "No receipt", "Create or attempt a verified export before verifying a receipt.")
             return
-        verified = self.services.delivery.verify_receipt(self._last_receipt_path, self.services.signing_provider)
+        try:
+            verified = self.services.delivery.verify_receipt(self._last_receipt_path, self.services.signing_provider)
+        except Exception as exc:
+            error = self.services.observability.error_monitor.record_exception(exc, component="ui.receipt_verification")
+            self.logger.error("receipt_verification_failed error_id=%s", error.error_id)
+            QMessageBox.critical(self, "Receipt verification failed", f"Could not verify the receipt. Error reference: {error.error_id}")
+            return
         self.delivery_view.append("\nReceipt verification: " + ("VALID" if verified else "INVALID"))
         self.statusBar().showMessage("Receipt verification completed")
 

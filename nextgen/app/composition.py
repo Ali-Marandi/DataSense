@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from app.bootstrap import app_data_dir
+from app.bootstrap import app_data_dir, configure_logging
+from app.observability import Observability
 from core.data.service import DataService
 from core.delivery.signing import FileHmacSigningKeyProvider, SigningKeyProvider
 from core.delivery.verified_export import VerifiedExportService
@@ -31,12 +32,14 @@ class Services:
     projects: ProjectStore
     feature_gate: FeatureGate
     telemetry: TelemetryQueue
+    observability: Observability
     state: ApplicationState
 
 
 def build_services(base_dir: Path | None = None) -> Services:
     data_dir = base_dir or app_data_dir()
     entitlement = Entitlement.plan("alpha", expires_in_days=30)
+    observability = configure_logging(data_dir)
     return Services(
         data=DataService(),
         delivery=VerifiedExportService(),
@@ -44,5 +47,6 @@ def build_services(base_dir: Path | None = None) -> Services:
         projects=ProjectStore(data_dir / "projects"),
         feature_gate=FeatureGate(entitlement),
         telemetry=TelemetryQueue(data_dir / "telemetry" / "events.jsonl"),
+        observability=observability,
         state=ApplicationState(),
     )
