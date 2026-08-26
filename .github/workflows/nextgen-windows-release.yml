@@ -79,8 +79,20 @@ jobs:
           & $compiler "/DAppVersion=${{ steps.version.outputs.value }}" "/DSourceDir=$pwd\dist\$env:APP_NAME" "installer\DataSense.iss"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Sign tagged release artifacts
+      - name: Detect optional code-signing material
+        id: signing
         if: startsWith(github.ref, 'refs/tags/nextgen-v')
+        shell: pwsh
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          $available = ![string]::IsNullOrWhiteSpace($env:CERTIFICATE_BASE64) -and ![string]::IsNullOrWhiteSpace($env:CERTIFICATE_PASSWORD) -and ![string]::IsNullOrWhiteSpace($env:TIMESTAMP_URL)
+          "available=$($available.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Sign tagged release artifacts when certificate is available
+        if: startsWith(github.ref, 'refs/tags/nextgen-v') && steps.signing.outputs.available == 'true'
         shell: pwsh
         working-directory: nextgen
         env:
@@ -88,13 +100,9 @@ jobs:
           CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:CERTIFICATE_BASE64) -or [string]::IsNullOrWhiteSpace($env:CERTIFICATE_PASSWORD) -or [string]::IsNullOrWhiteSpace($env:TIMESTAMP_URL)) {
-            throw "Code-signing secrets must be configured before a tagged release can be published."
-          }
           $certificatePath = Join-Path $env:RUNNER_TEMP "datasense-signing.pfx"
           [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
-          $signTool = Get-Command signtool.exe -ErrorAction SilentlyContinue
-          if ($null -eq $signTool) { throw "signtool.exe is unavailable on this runner." }
+          $signTool = Get-Command signtool.exe -ErrorAction Stop
           $assets = @(
             "dist\$env:APP_NAME\$env:APP_NAME.exe",
             "dist\installer\DataSense-${{ steps.version.outputs.value }}-windows-x64-setup.exe"
@@ -106,6 +114,18 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
           Remove-Item $certificatePath -Force
+
+      - name: Label unsigned alpha artifacts
+        if: startsWith(github.ref, 'refs/tags/nextgen-v') && steps.signing.outputs.available != 'true'
+        shell: pwsh
+        working-directory: nextgen
+        run: |
+          @"
+          SECURITY NOTICE
+          This DataSense NextGen Alpha build is intentionally unsigned.
+          Windows may display an unknown-publisher warning. Verify SHA256SUMS.txt
+          before use and do not treat this prerelease as a production deployment.
+          "@ | Set-Content "dist\UNSIGNED_ALPHA.txt" -Encoding utf8
 
       - name: Finalize portable ZIP, checksums and release manifest
         shell: pwsh
@@ -145,7 +165,7 @@ jobs:
           path: nextgen/dist/
 
   publish-release:
-    name: Publish signed tagged GitHub release
+    name: Publish tagged unsigned-or-signed GitHub prerelease
     if: startsWith(github.ref, 'refs/tags/nextgen-v')
     needs: test-package-and-verify
     runs-on: windows-latest
@@ -159,14 +179,19 @@ jobs:
           name: datasense-nextgen-windows-x64-${{ github.sha }}
           path: release-assets
 
-      - name: Publish signed release assets
+      - name: Publish tagged prerelease assets
         uses: softprops/action-gh-release@v2
         with:
           fail_on_unmatched_files: true
+          prerelease: true
           generate_release_notes: true
+          body: |
+            ## Security notice
+            This Alpha release is **unsigned** unless its assets display a trusted Windows code-signing certificate. Windows may show an unknown-publisher warning. Verify `SHA256SUMS.txt` before use; this prerelease is not intended for production deployment.
           files: |
             release-assets/**/*.zip
             release-assets/**/*setup.exe
             release-assets/**/SHA256SUMS.txt
             release-assets/**/release-manifest.json
             release-assets/**/sbom-python.json
+            release-assets/**/UNSIGNED_ALPHA.txt
