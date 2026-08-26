@@ -13,6 +13,7 @@ from core.delivery.verified_export import VerifiedExportService
 from core.governance.contracts import DataContract, QualityReport
 from core.licensing.entitlement import FeatureGate, Entitlement
 from core.projects.store import ProjectStore
+from core.reporting.automated_report import AutomatedReportService
 from core.telemetry.events import TelemetryQueue
 
 
@@ -28,6 +29,7 @@ class ApplicationState:
 class Services:
     data: DataService
     delivery: VerifiedExportService
+    reporting: AutomatedReportService
     signing_provider: SigningKeyProvider
     projects: ProjectStore
     feature_gate: FeatureGate
@@ -43,6 +45,7 @@ def build_services(base_dir: Path | None = None) -> Services:
     return Services(
         data=DataService(),
         delivery=VerifiedExportService(),
+        reporting=AutomatedReportService(),
         signing_provider=FileHmacSigningKeyProvider(data_dir / "signing" / "alpha-local-signing.key"),
         projects=ProjectStore(data_dir / "projects"),
         feature_gate=FeatureGate(entitlement),

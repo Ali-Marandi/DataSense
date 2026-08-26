@@ -47,6 +47,7 @@ class MainWindow(QMainWindow):
         self.services = services
         self.logger = services.observability.logger.getChild("ui")
         self._last_receipt_path: Path | None = None
+        self._last_automated_report_path: Path | None = None
         self.setWindowTitle("DataSense Alpha — Trusted local analytics")
         self.resize(1280, 820)
         self.setMinimumSize(1024, 680)
@@ -84,6 +85,8 @@ class MainWindow(QMainWindow):
         check_action.triggered.connect(self._run_quality_checks)
         insights_action = QAction("Data readiness", self)
         insights_action.triggered.connect(self._run_data_readiness_insights)
+        automated_report_action = QAction("Automated report", self)
+        automated_report_action.triggered.connect(self._export_automated_report)
         export_action = QAction("Verified export", self)
         export_action.triggered.connect(self._export_verified)
         toolbar.addAction(open_action)
@@ -91,6 +94,7 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         toolbar.addAction(check_action)
         toolbar.addAction(insights_action)
+        toolbar.addAction(automated_report_action)
         toolbar.addAction(export_action)
         self.addToolBar(toolbar)
 
@@ -225,10 +229,13 @@ class MainWindow(QMainWindow):
             "Create a verified HTML artifact only after the active contract passes. Every attempt produces a metadata-only, locally signed receipt.",
         )
         action_row = QHBoxLayout()
+        automated_report_button = QPushButton("Create automated local report")
+        automated_report_button.clicked.connect(self._export_automated_report)
         export_button = QPushButton("Export verified HTML report")
         export_button.clicked.connect(self._export_verified)
         verify_button = QPushButton("Verify latest receipt")
         verify_button.clicked.connect(self._verify_latest_receipt)
+        action_row.addWidget(automated_report_button)
         action_row.addWidget(export_button)
         action_row.addWidget(verify_button)
         action_row.addStretch()
@@ -263,6 +270,7 @@ class MainWindow(QMainWindow):
         self.services.state.source_label = label
         self.services.state.quality_report = None
         self._last_receipt_path = None
+        self._last_automated_report_path = None
         self._render_state()
         source_kind = "sample" if label.startswith("DataSense sample") else "local_file"
         self.logger.info("dataset_loaded source_kind=%s rows=%d columns=%d", source_kind, len(frame), len(frame.columns))
@@ -314,6 +322,50 @@ class MainWindow(QMainWindow):
         self.insights_view.setPlainText("\n".join(lines))
         self.logger.info("data_readiness_completed score=%s warnings=%d", summary["readiness_score"], len(result.warnings))
         self.statusBar().showMessage("Data readiness insights computed locally")
+
+    def _export_automated_report(self) -> None:
+        """Create a standard local aggregate report; it is not a verified-delivery artifact."""
+        frame = self.services.state.frame
+        if frame is None:
+            QMessageBox.information(self, "No dataset", "Open data before creating an automated report.")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save automated local report",
+            "datasense-automated-report.html",
+            "HTML files (*.html)",
+        )
+        if not path:
+            return
+        try:
+            profile = self.services.data.profile(frame)
+            readiness = DataReadinessInsightsModule().process(frame, context=ProcessingContext())
+            artifact = self.services.reporting.generate(
+                path,
+                profile=profile,
+                readiness=readiness,
+                quality=self.services.state.quality_report,
+            )
+        except Exception as exc:
+            error = self.services.observability.error_monitor.record_exception(exc, component="ui.automated_report")
+            self.logger.error("automated_report_failed error_id=%s", error.error_id)
+            QMessageBox.critical(self, "Automated report failed", f"No report was created. Error reference: {error.error_id}")
+            return
+        self._last_automated_report_path = artifact.artifact_path
+        self.delivery_view.setPlainText(
+            "Automated local report saved:\n"
+            f"{artifact.artifact_path}\n\n"
+            "Metadata-only manifest saved:\n"
+            f"{artifact.manifest_path}\n\n"
+            f"Readiness: {artifact.readiness_score}/100 · Quality: {artifact.quality_status}\n\n"
+            "This standard aggregate report is not a signed verified-delivery artifact."
+        )
+        self.logger.info(
+            "automated_report_created readiness_score=%s quality_status=%s",
+            artifact.readiness_score,
+            artifact.quality_status,
+        )
+        self.statusBar().showMessage("Automated local report created without raw dataset values")
 
     def _export_verified(self) -> None:
         entitlement = self.services.feature_gate.decision("verified_export")

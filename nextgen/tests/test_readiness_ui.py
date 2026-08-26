@@ -21,3 +21,23 @@ def test_main_window_renders_local_data_readiness_insights_without_sample_values
     assert "SO-1001" not in rendered
     assert "Data readiness insights" in window.statusBar().currentMessage()
     window.close()
+
+
+def test_main_window_creates_aggregate_automated_report_without_sample_values(tmp_path, monkeypatch):
+    window = MainWindow(build_services(tmp_path / "app-data"))
+    output = tmp_path / "automated-report.html"
+    monkeypatch.setattr(
+        "ui.main_window.QFileDialog.getSaveFileName",
+        lambda *_args, **_kwargs: (str(output), "HTML files (*.html)"),
+    )
+
+    window._load_sample()
+    window._run_quality_checks()
+    window._export_automated_report()
+
+    assert output.exists()
+    assert output.with_suffix(".html.manifest.json").exists()
+    assert "Automated local report saved" in window.delivery_view.toPlainText()
+    assert "SO-1001" not in output.read_text(encoding="utf-8")
+    assert "without raw dataset values" in window.statusBar().currentMessage()
+    window.close()

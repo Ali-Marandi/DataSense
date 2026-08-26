@@ -13,14 +13,18 @@ flowchart LR
   APP --> DATA[core/data]
   APP --> GOV[core/governance]
   APP --> DEL[core/delivery]
+  APP --> REP[core/reporting]
   APP --> LIC[core/licensing]
   APP --> TEL[core/telemetry]
   DATA --> MOD[core/analysis/*\nfuture processing modules]
   GOV --> DEL
   DATA --> GOV
   DATA --> DEL
+  DATA --> REP
+  MOD --> REP
+  GOV --> REP
   DEL --> SIGN[core/delivery/signing]
-  UI -. read-only projection .-> DTO[DatasetProfile / QualityReport / VerifiedExportResult]
+  UI -. read-only projection .-> DTO[DatasetProfile / QualityReport / ProcessingResult / ReportArtifact]
 ```
 
 | لایه | مجاز است انجام دهد | نباید انجام دهد |
@@ -31,6 +35,7 @@ flowchart LR
 | `core/governance` | policy، contract، rule evaluation و report | dialog UI یا write artifact |
 | `core/delivery` | تصمیم export، receipt، report و verify | نگهداری کلید یا تحلیل مستقیم valueهای raw |
 | `core/delivery/signing` | interface و implementation امضا | export/report/UI |
+| `core/reporting` | ساخت HTML/manifest aggregate-only از DTOها | دریافت DataFrame، ساخت receipt امضاشده یا تصمیم verified export |
 | `core/analysis/*` | محاسبهٔ آماری/ML/transform از روی frame | import UI یا mutate state global |
 | `core/telemetry` | صف opt-in و redaction allowlist | دریافت frame، filename، values یا query |
 
@@ -42,10 +47,12 @@ flowchart LR
 services = Services(
     data=DataService(),
     delivery=VerifiedExportService(),
+    reporting=AutomatedReportService(),
     signing_provider=FileHmacSigningKeyProvider(data_dir / "signing" / "alpha-local-signing.key"),
     projects=ProjectStore(data_dir / "projects"),
     feature_gate=FeatureGate(entitlement),
     telemetry=TelemetryQueue(data_dir / "telemetry" / "events.jsonl"),
+    observability=observability,
     state=ApplicationState(),
 )
 ```
@@ -54,10 +61,12 @@ services = Services(
 |---|---|---|---|
 | `data` | `DataService` | session | DataFrame فقط local memory |
 | `delivery` | `VerifiedExportService` | stateless | receipt فقط aggregate metadata |
+| `reporting` | `AutomatedReportService` | stateless | فقط DTOهای aggregate می‌پذیرد؛ DataFrame/source path نمی‌پذیرد |
 | `signing_provider` | `SigningKeyProvider` | installation/session | کلید هرگز به UI یا receipt نمی‌رود |
 | `projects` | `ProjectStore` | installation | داده در پروژهٔ local ذخیره می‌شود |
 | `feature_gate` | `FeatureGate` | entitlement refresh | فقط plan/feature در اختیار UI |
 | `telemetry` | `TelemetryQueue` | session | با consent و field allowlist |
+| `observability` | `Observability` | application/session | log/error ID redacted؛ جایگزین منع logging دادهٔ حساس نیست |
 | `state` | `ApplicationState` | window/session | frame فقط در process local |
 
 ### قاعدهٔ تزریق برای ماژول جدید
@@ -66,24 +75,26 @@ services = Services(
 
 ```python
 @dataclass(frozen=True)
-class AnalysisContext:
-    project_id: str
-    locale: str
-    cancellation: CancellationToken
+class ProcessingContext:
+    project_id: str = "local-unsaved-project"
+    locale: str = "en-US"
+    options: dict[str, Any] = field(default_factory=dict)
 
 @dataclass(frozen=True)
-class AnalysisResult:
+class ProcessingResult:
     module_id: str
-    summary: dict[str, int | float | str]
-    artifacts: tuple[ArtifactDescriptor, ...]
-    warnings: tuple[str, ...]
+    summary: dict[str, int | float | str | bool]
+    warnings: tuple[str, ...] = ()
+    artifact_references: tuple[str, ...] = ()
 
 class ProcessingModule(Protocol):
     module_id: str
 
-    def analyze(self, frame: pd.DataFrame, context: AnalysisContext) -> AnalysisResult:
-        """Must be deterministic for an identical frame and configuration."""
+    def process(self, frame: pd.DataFrame, context: ProcessingContext) -> ProcessingResult:
+        """برای frame/config/dependency یکسان، خروجی قطعی تولید می‌کند."""
 ```
+
+Envelopeهای dataclass با `frozen=True` ساخته می‌شوند، اما `summary` و `options` از نوع `dict` هستند؛ بنابراین توسعه‌دهنده نباید آن‌ها را پس از ساخت mutation کند. برای immutability عمیق، تغییر قرارداد و migration نسخه‌ای لازم است.
 
 ## ۳. API هستهٔ داده
 
@@ -247,12 +258,14 @@ dashboard.update_dashboard(profile, state.quality_report, state.source_label)
 |---|---|---|---|
 | Open CSV | `DataService.load_csv` | frame/source/quality reset | profile + table preview + dashboard pending |
 | Run checks | `DataContract.evaluate` | quality report | quality table + trust badge + progress |
+| Data readiness | `DataReadinessInsightsModule.process` | ندارد | شمارش‌های aggregate و هشدارهای بدون cell value |
+| Automated report | `AutomatedReportService.generate` | latest report path در UI session | مسیر HTML/manifest و برچسب standard، نه verified |
 | Verified export | `VerifiedExportService.export_html` | latest receipt path در UI session | status، hash، مسیر artifact/receipt |
 | Verify receipt | `verify_receipt` | ندارد | پیام VALID/INVALID |
 
 ### اصول UI
 
-1. UI فقط `DatasetProfile`، `QualityReport` و `VerifiedExportResult` را render می‌کند.
+1. UI فقط `DatasetProfile`، `QualityReport`، `ProcessingResult` و DTOهای delivery/reporting را render می‌کند؛ منطق domain را بازپیاده‌سازی نمی‌کند.
 2. UI نباید HMAC key، receipt payload داخلی یا raw data را به telemetry بدهد.
 3. preview باید opt-in local و bounded باشد. برای دادهٔ بزرگ، pagination/lazy model در module بعدی لازم است.
 4. تغییر dataset همیشه `quality_report` و last receipt UI را invalid می‌کند.
@@ -264,7 +277,7 @@ dashboard.update_dashboard(profile, state.quality_report, state.source_label)
 |---|---|---|---|
 | data import | `DatasetLoadError` | dialog قابل‌اقدام | code دسته‌بندی‌شده، بدون path/value |
 | governance | configuration `ValueError` | owner/developer error در alpha | issue داخلی؛ raw data ممنوع |
-| delivery | profile mismatch یا write error | dialog/retry guidance | error type و app version فقط با opt-in |
+| delivery/reporting | profile mismatch یا write error | dialog/retry guidance | error type و app version فقط با opt-in؛ raw row/path ممنوع |
 | receipt verification | `False` | پیام invalid + عدم اعتماد | هیچ payload receipt به telemetry نرود |
 
 ## ۸. checklist توسعهٔ یک پردازشگر جدید
@@ -273,7 +286,7 @@ dashboard.update_dashboard(profile, state.quality_report, state.source_label)
 |---|---|
 | تعریف مسئله | `module_id`، owner، input schema و expected DTO |
 | مرز داده | مشخص کنید module raw data را می‌بیند یا فقط aggregateها را؛ خروجی نباید data leak کند. |
-| interface | implementation `ProcessingModule` با context و result immutable |
+| interface | implementation `ProcessingModule` با `ProcessingContext` و `ProcessingResult`؛ envelope frozen و عدم mutation قراردادی |
 | تست | unit tests با fixture synthetic و test cancellation/error paths |
 | governance | contract/evidence اثر module را قبل از delivery تعریف کنید |
 | UI | view model/DTO جدا؛ ممنوعیت import pandas در widget |
@@ -320,5 +333,7 @@ class RevenueSummaryModule:
 | روز ۳ | data contract و quality report | unique/null/missing/severity/configuration/error |
 | روز ۴ | verified export/receipt/signing | allow/block، profile mismatch، tamper detection، suffix normalization |
 | روز ۵ | dashboard، preview و binding UI | approved/blocked dashboard و sample flow MainWindow |
+| روزهای ۸–۹ | DataReadiness، observability و hardening | missing/non-finite/IQR/determinism/immutability و redaction |
+| روزهای ۱۰–۱۱ | گزارش خودکار aggregate-only | HTML/manifest atomic، XSS escaping، privacy، UI binding و quality state |
 
 **وضعیت Alpha:** `FileHmacSigningKeyProvider` برای مسیر یادگیری مناسب است، اما release production باید provider مبتنی بر حفاظت key ویندوز، installer/code signing و review امنیت مستقل داشته باشد.
