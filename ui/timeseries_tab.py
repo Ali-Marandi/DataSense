@@ -19,6 +19,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 from core.timeseries import FREQUENCIES, MODELS, build_series, decompose, forecast, forecast_frame
+from core.finance.factors import compute_beta
 
 AGGREGATIONS = ["sum", "mean", "median", "min", "max", "count"]
 
@@ -57,13 +58,19 @@ class TimeSeriesTab(QWidget):
         form.addRow("Model", self.model_box)
         form.addRow("Horizon", self.periods)
 
+        # Market selector for finance calculations
+        self.market_box = QComboBox()
+        form.addRow("Market column", self.market_box)
+
         self.plot_btn = QPushButton("Plot series")
         self.decompose_btn = QPushButton("Decompose (trend / seasonality)")
         self.forecast_btn = QPushButton("Forecast")
+        self.beta_btn = QPushButton("Compute Beta vs Market")
         for btn, slot in (
             (self.plot_btn, self.plot_series),
             (self.decompose_btn, self.run_decompose),
             (self.forecast_btn, self.run_forecast),
+            (self.beta_btn, self.compute_beta_ui),
         ):
             btn.clicked.connect(slot)
             form.addRow(btn)
@@ -88,6 +95,7 @@ class TimeSeriesTab(QWidget):
         if not self.manager.loaded:
             self.date_box.clear()
             self.value_box.clear()
+            self.market_box.clear()
             return
         df = self.manager.df
         candidates = [
@@ -97,6 +105,8 @@ class TimeSeriesTab(QWidget):
         ] or list(df.columns)
         self._fill(self.date_box, candidates)
         self._fill(self.value_box, self.manager.numeric_columns)
+        # fill market choices from numeric columns as well
+        self._fill(self.market_box, self.manager.numeric_columns)
 
     @staticmethod
     def _fill(box: QComboBox, values: list[str]) -> None:
@@ -184,6 +194,47 @@ class TimeSeriesTab(QWidget):
         )
         self.status.setText(f"Forecast of {self.periods.value()} period(s) generated.")
         self.resultReady.emit("Forecast", forecast_frame(result))
+
+    def compute_beta_ui(self) -> None:
+        try:
+            asset_series = self._series()
+            market_col = self.market_box.currentText()
+            if not market_col:
+                raise ValueError("Select a market column.")
+            # Build market series using same date/aggregation settings
+            market_series = build_series(
+                self.manager.df, self.date_box.currentText(), market_col,
+                FREQUENCIES[self.freq_box.currentText()], self.agg_box.currentText()
+            )
+            res = compute_beta(asset_series, market_series)
+        except Exception as exc:
+            self._fail(exc)
+            return
+
+        # plot scatter of returns and regression line
+        self.figure.clear()
+        ax = self.figure.add_subplot(111)
+        x = res["market_returns"].values
+        y = res["asset_returns"].values
+        ax.scatter(x, y, s=18, alpha=0.75, color="#4f9dff", label="observations")
+        import numpy as np
+        yhat = res["alpha"] + res["beta"] * x
+        order = np.argsort(x)
+        ax.plot(x[order], yhat[order], color="#e4586a", linewidth=1.6, label="fit")
+        ax.set_title(f"Beta: {res['beta']:.3f}  ·  R²: {res['r2']:.3f}")
+        ax.set_xlabel("market returns")
+        ax.set_ylabel("asset returns")
+        ax.grid(alpha=0.2)
+        ax.legend(fontsize=8)
+        self.canvas.draw_idle()
+
+        self.status.setText(f"Beta: {res['beta']:.4f}  ·  R²: {res['r2']:.3f}  ·  n={res['n_obs']}")
+        self.metrics.setText(f"alpha: {res['alpha']:.6f}")
+        try:
+            out_frame = res["asset_returns"].to_frame("asset_returns").join(res["market_returns"].to_frame("market_returns"))
+            self.resultReady.emit("Beta regression", out_frame.reset_index())
+        except Exception:
+            pass
 
     def apply_theme(self, dark: bool) -> None:
         colour = "#141d2c" if dark else "#ffffff"
