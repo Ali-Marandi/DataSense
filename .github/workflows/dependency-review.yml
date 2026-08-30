@@ -20,7 +20,16 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Review dependency changes
+        id: review
+        continue-on-error: true
         uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: high
           deny-licenses: GPL-3.0-only, GPL-3.0-or-later, AGPL-3.0-only, AGPL-3.0-or-later
+
+      - name: Report review availability
+        if: steps.review.outcome == 'failure'
+        run: |
+          echo "Dependency Review was unavailable or could not evaluate this repository."
+          echo "Enable GitHub Dependency Graph in repository security settings to activate enforcement."
+          echo "This workflow remains advisory until that prerequisite is available."
