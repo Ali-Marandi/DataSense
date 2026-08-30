@@ -20,3 +20,9 @@ cryptography
 plotly
 joblib
 statsmodels
+arch
+scipy
+yfinance
+networkx
+pyinform
+scikit-tda
