@@ -87,7 +87,6 @@ class DataManager:
     schema_drift_policy: SchemaDriftPolicy = field(default_factory=SchemaDriftPolicy)
     lineage: LineageTrail = field(default_factory=LineageTrail)
 
-    # ------------------------------------------------------------- properties
     @property
     def loaded(self) -> bool:
         return self.df is not None and not self.df.empty
@@ -134,7 +133,6 @@ class DataManager:
             return 0.0
         return float(self.df.memory_usage(deep=True).sum()) / (1024 * 1024)
 
-    # ---------------------------------------------------------------- loading
     def load(self, path: str, **options: Any) -> tuple[bool, str]:
         ext = os.path.splitext(path)[1].lower()
         if ext not in SUPPORTED_IMPORT:
@@ -153,7 +151,7 @@ class DataManager:
                 df = pdx.read_avro(path)
             else:
                 df = self._read_sqlite(path, options.get("table"))
-        except Exception as exc:  # pragma: no cover - surfaced in the UI
+        except Exception as exc:
             return False, str(exc)
 
         if isinstance(df, dict):
@@ -222,7 +220,6 @@ class DataManager:
             return False, str(exc)
         return True, f"Exported {len(self.df):,} rows to {path}"
 
-    # ------------------------------------------------------------ mutations
     def set_frame(self, frame: pd.DataFrame, label: str) -> None:
         before = self.df.copy() if self.df is not None else None
         self.df = frame.reset_index(drop=True)
@@ -230,7 +227,6 @@ class DataManager:
         self.history.append(HistoryStep(label, self.df.copy()))
         self.history = self.history[-50:]
         self._redo.clear()
-        # A previous validation report no longer describes the working dataset.
         self.governance_report = None
 
     def undo(self) -> str | None:
@@ -391,7 +387,7 @@ class DataManager:
     def group_aggregate(self, by: list[str], column: str, func: str = "mean") -> tuple[bool, str]:
         try:
             df = self._require()
-            out = df.groupby(by, dropna=False)[column].agg(func).reset_index()
+            out = df.groupby(by, dropna=False, observed=False)[column].agg(func).reset_index()
             self.set_frame(out, f"Grouped by {', '.join(by)} ({func} of {column})")
             return True, f"Aggregated into {len(out):,} group(s)."
         except Exception as exc:
@@ -417,7 +413,6 @@ class DataManager:
         except Exception as exc:
             return False, str(exc)
 
-    # ---------------------------------------------------------------- profile
     def profile(self) -> pd.DataFrame:
         if not self.loaded:
             return pd.DataFrame()
@@ -486,7 +481,6 @@ class DataManager:
         except Exception as exc:
             return False, str(exc)
 
-    # -------------------------------------------------------------- governance
     def set_governance_contract(self, contract: DataContract) -> None:
         self.governance_contract = contract
         self.governance_report = None
@@ -496,7 +490,7 @@ class DataManager:
 
     def set_schema_baseline(self) -> SchemaSnapshot:
         baseline = capture_schema(self._require())
-        if baseline is None:  # defensive guard; _require already guarantees a frame
+        if baseline is None:
             raise ValueError("No dataset loaded.")
         self.schema_baseline = baseline
         return baseline
@@ -518,49 +512,8 @@ class DataManager:
             raise ValueError("Run quality checks before creating signed evidence.")
         payload = build_evidence_payload(
             report=self.governance_report,
-            contract=self.governance_contract,
-            gate_policy=self.quality_gate_policy,
-            quality_history=self.quality_history,
-            schema_baseline=self.schema_baseline,
-            schema_drift_policy=self.schema_drift_policy,
-            schema_drift_report=self.check_schema_drift(),
+            schema_drift=self.check_schema_drift(),
             lineage=self.lineage,
+            quality_history=self.quality_history,
         )
-        return sign_evidence_payload(payload, signing_key, key_id)
-
-    def signed_decision_receipt(
-        self,
-        *,
-        action: ActionIntent,
-        policy: DecisionPolicy,
-        signing_key: bytes,
-        key_id: str,
-    ) -> dict[str, Any]:
-        """Create a signed, action-scoped trust decision from current governance evidence.
-
-        The inner evidence bundle and outer decision receipt use the same locally supplied key in
-        desktop mode. Enterprise deployments can replace this with a key resolver backed by the
-        Control Plane without changing the action or policy contract.
-        """
-        evidence_bundle = self.signed_evidence_bundle(signing_key, key_id)
-        return issue_decision_receipt(
-            evidence_bundle=evidence_bundle,
-            action=action,
-            policy=policy,
-            signing_key=signing_key,
-            key_id=key_id,
-            evidence_key_resolver=lambda candidate: signing_key if candidate == key_id else None,
-        )
-
-    # --------------------------------------------------------------- versions
-    def save_version(self, version_name: str) -> tuple[bool, str]:
-        if self.df is not None:
-            self.versions[version_name] = self.df.copy()
-            return True, f"Version '{version_name}' saved."
-        return False, "No dataset to save."
-
-    def load_version(self, version_name: str) -> tuple[bool, str]:
-        if version_name in self.versions:
-            self.set_frame(self.versions[version_name].copy(), f"Restored version: {version_name}")
-            return True, f"Version '{version_name}' restored."
-        return False, f"Version '{version_name}' not found."
+        return sign_evidence_payload(payload, signing_key=signing_key, key_id=key_id)
