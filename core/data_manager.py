@@ -42,7 +42,6 @@ SUPPORTED_IMPORT = {
     ".sqlite": "SQLite database",
 }
 
-# Files larger than this (bytes) are read in chunks to keep memory flat.
 LARGE_FILE_THRESHOLD = 64 * 1024 * 1024
 DEFAULT_CHUNK_ROWS = 250_000
 
@@ -512,8 +511,48 @@ class DataManager:
             raise ValueError("Run quality checks before creating signed evidence.")
         payload = build_evidence_payload(
             report=self.governance_report,
-            schema_drift=self.check_schema_drift(),
-            lineage=self.lineage,
+            contract=self.governance_contract,
+            gate_policy=self.quality_gate_policy,
             quality_history=self.quality_history,
+            schema_baseline=self.schema_baseline,
+            schema_drift_policy=self.schema_drift_policy,
+            schema_drift_report=self.check_schema_drift(),
+            lineage=self.lineage,
         )
-        return sign_evidence_payload(payload, signing_key=signing_key, key_id=key_id)
+        return sign_evidence_payload(payload, signing_key, key_id)
+
+    def signed_decision_receipt(
+        self,
+        *,
+        action: ActionIntent,
+        policy: DecisionPolicy,
+        signing_key: bytes,
+        key_id: str,
+    ) -> dict[str, Any]:
+        """Create a signed, action-scoped trust decision from current governance evidence.
+
+        The inner evidence bundle and outer decision receipt use the same locally supplied key in
+        desktop mode. Enterprise deployments can replace this with a key resolver backed by the
+        Control Plane without changing the action or policy contract.
+        """
+        evidence_bundle = self.signed_evidence_bundle(signing_key, key_id)
+        return issue_decision_receipt(
+            evidence_bundle=evidence_bundle,
+            action=action,
+            policy=policy,
+            signing_key=signing_key,
+            key_id=key_id,
+            evidence_key_resolver=lambda candidate: signing_key if candidate == key_id else None,
+        )
+
+    def save_version(self, version_name: str) -> tuple[bool, str]:
+        if self.df is not None:
+            self.versions[version_name] = self.df.copy()
+            return True, f"Version '{version_name}' saved."
+        return False, "No dataset to save."
+
+    def load_version(self, version_name: str) -> tuple[bool, str]:
+        if version_name in self.versions:
+            self.set_frame(self.versions[version_name].copy(), f"Restored version: {version_name}")
+            return True, f"Version '{version_name}' restored."
+        return False, f"Version '{version_name}' not found."
