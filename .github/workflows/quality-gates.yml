@@ -1,0 +1,50 @@
+name: Quality Gates
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install application dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compile all Python modules
+        run: python -m compileall -q .
+
+      - name: Verify dependency consistency
+        run: pip check
+
+      - name: Validate required product metadata
+        run: |
+          python - <<'PY'
+          from core.version import APP_NAME, APP_VERSION, APP_URL
+          assert APP_NAME == "DataSense"
+          assert APP_VERSION.count(".") == 2
+          assert APP_URL.startswith("https://")
+          print(f"Validated {APP_NAME} {APP_VERSION}")
+          PY
