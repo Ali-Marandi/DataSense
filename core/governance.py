@@ -14,6 +14,8 @@ from typing import Any
 
 import pandas as pd
 
+from .contract_rules import evaluate_cross_column
+
 
 PII_HINTS: dict[str, tuple[str, str]] = {
     "email": ("Email address", "Restricted"),
@@ -55,7 +57,7 @@ class DataClassification:
 
 @dataclass(frozen=True)
 class DataQualityRule:
-    """A serialisable quality assertion applied to a single DataFrame column."""
+    """A serialisable deterministic data-quality assertion."""
 
     rule_type: str
     column: str
@@ -120,7 +122,11 @@ class SchemaSnapshot:
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def to_dict(self) -> dict[str, Any]:
-        return {"columns": [{"name": name, "dtype": dtype, "nullable": nullable} for name, dtype, nullable in self.columns], "captured_at": self.captured_at, "fingerprint": self.fingerprint}
+        return {
+            "columns": [{"name": name, "dtype": dtype, "nullable": nullable} for name, dtype, nullable in self.columns],
+            "captured_at": self.captured_at,
+            "fingerprint": self.fingerprint,
+        }
 
     @classmethod
     def from_dict(cls, value: dict[str, Any] | None) -> "SchemaSnapshot | None":
@@ -363,7 +369,6 @@ class QualityReport:
 
     @property
     def score(self) -> float | None:
-        """Weighted pass-rate; no configured/evaluated rules intentionally has no score."""
         if not self.evaluated:
             return None
         weights = {"critical": 4, "high": 3, "medium": 2, "low": 1}
@@ -388,7 +393,6 @@ class QualityReport:
         return "trusted"
 
     def gate_decision(self, policy: QualityGatePolicy | None = None) -> QualityGateDecision:
-        """Apply a policy after execution without changing the independently computed quality score."""
         policy = policy or QualityGatePolicy()
         if self.score is None:
             return QualityGateDecision(policy.name, "not configured", ("No evaluated quality rules are available.",), self.score)
@@ -505,33 +509,29 @@ def _result(
 
 
 def evaluate_rule(frame: pd.DataFrame, rule: DataQualityRule) -> QualityCheckResult:
-    """Run one rule. Unexpected invalid configuration becomes an explicit audit error."""
+    """Run one rule; invalid configurations become explicit audit errors."""
+    kind = rule.rule_type.lower().strip()
+    if kind in {
+        "less_than_or_equal", "greater_than_or_equal", "equal",
+        "conditional_required", "date_order", "sum_to", "unique_combination",
+    }:
+        cross_result = evaluate_cross_column(frame, rule, _result)
+        if cross_result is not None:
+            return cross_result
+
     if rule.column not in frame.columns:
         return _result(rule, "error", "Column missing", "Column must exist", detail="The selected column is absent.")
 
     series = frame[rule.column]
-    kind = rule.rule_type.lower().strip()
     try:
         if kind == "not_null":
             violations = int(series.isna().sum())
-            return _result(
-                rule,
-                "pass" if violations == 0 else "fail",
-                f"{violations:,} null value(s)",
-                "0 null values",
-                violations,
-            )
+            return _result(rule, "pass" if violations == 0 else "fail", f"{violations:,} null value(s)", "0 null values", violations)
 
         if kind == "unique":
             present = series.dropna()
             violations = int(present.duplicated().sum())
-            return _result(
-                rule,
-                "pass" if violations == 0 else "fail",
-                f"{violations:,} duplicate value(s)",
-                "All non-null values unique",
-                violations,
-            )
+            return _result(rule, "pass" if violations == 0 else "fail", f"{violations:,} duplicate value(s)", "All non-null values unique", violations)
 
         if kind == "range":
             numeric = pd.to_numeric(series, errors="coerce")
@@ -550,13 +550,7 @@ def evaluate_rule(frame: pd.DataFrame, rule: DataQualityRule) -> QualityCheckRes
                 bad |= numeric > upper_value
                 limits.append(f"<= {upper_value:g}")
             violations = int(bad.fillna(False).sum())
-            return _result(
-                rule,
-                "pass" if violations == 0 else "fail",
-                f"{violations:,} value(s) outside bounds",
-                " and ".join(limits),
-                violations,
-            )
+            return _result(rule, "pass" if violations == 0 else "fail", f"{violations:,} value(s) outside bounds", " and ".join(limits), violations)
 
         if kind == "allowed_values":
             values = rule.params.get("values", [])
@@ -566,13 +560,7 @@ def evaluate_rule(frame: pd.DataFrame, rule: DataQualityRule) -> QualityCheckRes
             violations = int(bad.sum())
             visible = ", ".join(str(value) for value in values[:8])
             expected = f"One of: {visible}{' …' if len(values) > 8 else ''}"
-            return _result(
-                rule,
-                "pass" if violations == 0 else "fail",
-                f"{violations:,} unexpected value(s)",
-                expected,
-                violations,
-            )
+            return _result(rule, "pass" if violations == 0 else "fail", f"{violations:,} unexpected value(s)", expected, violations)
 
         if kind == "regex":
             pattern = str(rule.params.get("pattern", ""))
@@ -580,13 +568,7 @@ def evaluate_rule(frame: pd.DataFrame, rule: DataQualityRule) -> QualityCheckRes
                 return _result(rule, "error", "No pattern", "Valid regular expression", detail="Configure a regex pattern.")
             valid = series.dropna().astype(str).str.fullmatch(pattern, na=False)
             violations = int((~valid).sum())
-            return _result(
-                rule,
-                "pass" if violations == 0 else "fail",
-                f"{violations:,} non-matching value(s)",
-                f"Matches /{pattern}/",
-                violations,
-            )
+            return _result(rule, "pass" if violations == 0 else "fail", f"{violations:,} non-matching value(s)", f"Matches /{pattern}/", violations)
 
         if kind == "freshness":
             max_age_days = float(rule.params.get("max_age_days", 0))
@@ -599,13 +581,7 @@ def evaluate_rule(frame: pd.DataFrame, rule: DataQualityRule) -> QualityCheckRes
             now = pd.Timestamp.now(tz="UTC")
             age = max((now - newest).total_seconds() / 86400, 0.0)
             violations = 0 if age <= max_age_days else 1
-            return _result(
-                rule,
-                "pass" if violations == 0 else "fail",
-                f"Newest value is {age:.1f} day(s) old",
-                f"Newest value <= {max_age_days:g} day(s) old",
-                violations,
-            )
+            return _result(rule, "pass" if violations == 0 else "fail", f"Newest value is {age:.1f} day(s) old", f"Newest value <= {max_age_days:g} day(s) old", violations)
 
         return _result(rule, "error", f"Unknown rule: {rule.rule_type}", "Supported rule type", detail="Unsupported rule type.")
     except (TypeError, ValueError, re.error) as exc:
@@ -626,34 +602,12 @@ def recommended_rules(frame: pd.DataFrame | None) -> list[DataQualityRule]:
         identifier = any(token in normalized for token in ("_id", "id_", "key", "code", "email"))
 
         if non_null and (nulls == 0 or identifier):
-            rules.append(
-                DataQualityRule(
-                    "not_null",
-                    str(column),
-                    severity="high" if identifier else "medium",
-                    name=f"{column} must be populated",
-                )
-            )
+            rules.append(DataQualityRule("not_null", str(column), severity="high" if identifier else "medium", name=f"{column} must be populated"))
         if identifier and non_null and unique == non_null:
-            rules.append(
-                DataQualityRule(
-                    "unique",
-                    str(column),
-                    severity="high",
-                    name=f"{column} must be unique",
-                )
-            )
+            rules.append(DataQualityRule("unique", str(column), severity="high", name=f"{column} must be unique"))
         if 1 < unique <= 12 and non_null and non_null / max(len(frame), 1) >= 0.95:
             values = [value.item() if hasattr(value, "item") else value for value in series.dropna().unique().tolist()]
-            rules.append(
-                DataQualityRule(
-                    "allowed_values",
-                    str(column),
-                    params={"values": values},
-                    severity="low",
-                    name=f"{column} accepted values",
-                )
-            )
+            rules.append(DataQualityRule("allowed_values", str(column), params={"values": values}, severity="low", name=f"{column} accepted values"))
     return rules
 
 
@@ -692,41 +646,34 @@ def scan_sensitive_data(frame: pd.DataFrame | None, sample_size: int = 250) -> l
             label, sensitivity = hint
             detections.append((label, sensitivity, "column name", 0.9))
         if not values.empty:
-            detections.extend(
-                [
-                    ("Email address", "Restricted", "value pattern", _match_ratio(values, EMAIL_RE.fullmatch)),
-                    ("IP address", "Confidential", "value pattern", _match_ratio(values, IP_RE.fullmatch)),
-                    ("Phone number", "Restricted", "value pattern", _match_ratio(values, PHONE_RE.fullmatch)),
-                    ("Payment card", "Restricted", "Luhn-valid value pattern", _match_ratio(values, lambda value: bool(CARD_RE.fullmatch(value)) and _luhn_valid(value))),
-                ]
-            )
+            detections.extend([
+                ("Email address", "Restricted", "value pattern", _match_ratio(values, EMAIL_RE.fullmatch)),
+                ("IP address", "Confidential", "value pattern", _match_ratio(values, IP_RE.fullmatch)),
+                ("Phone number", "Restricted", "value pattern", _match_ratio(values, PHONE_RE.fullmatch)),
+                ("Payment card", "Restricted", "Luhn-valid value pattern", _match_ratio(values, lambda value: bool(CARD_RE.fullmatch(value)) and _luhn_valid(value))),
+            ])
         viable = [item for item in detections if item[3] >= 0.6]
         if not viable:
             continue
         label, sensitivity, evidence, confidence_score = max(viable, key=lambda item: item[3])
         confidence = "high" if confidence_score >= 0.85 else "medium"
-        findings.append(
-            DataClassification(
-                column=name,
-                label=label,
-                sensitivity=sensitivity,
-                confidence=confidence,
-                evidence=evidence,
-                recommendation=(
-                    "Review access, redact before external sharing, and add an approved handling rule."
-                    if sensitivity == "Restricted"
-                    else "Review access and document the approved handling policy."
-                ),
-            )
-        )
+        findings.append(DataClassification(
+            column=name,
+            label=label,
+            sensitivity=sensitivity,
+            confidence=confidence,
+            evidence=evidence,
+            recommendation=(
+                "Review access, redact before external sharing, and add an approved handling rule."
+                if sensitivity == "Restricted"
+                else "Review access and document the approved handling policy."
+            ),
+        ))
     return findings
 
 
 def classifications_frame(classifications: list[DataClassification]) -> pd.DataFrame:
-    return pd.DataFrame(
-        [asdict(item) for item in classifications],
-        columns=["column", "label", "sensitivity", "confidence", "evidence", "recommendation"],
-    )
+    return pd.DataFrame([asdict(item) for item in classifications], columns=["column", "label", "sensitivity", "confidence", "evidence", "recommendation"])
 
 
 def contract_to_json(contract: DataContract) -> str:
