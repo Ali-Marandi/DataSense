@@ -11,15 +11,20 @@
 
 ---
 
-## Current product capabilities
+## Product direction
 
-DataSense is local-first: dataset rows stay local unless the user explicitly opts into a remote AI request. Governance outputs are evidence metadata, not a claim of causal or scientific validity. The roadmap is maintained in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+DataSense is being developed as a local-first, trusted analytics workbench. The workflow is designed to make analysis repeatable and reviewable: data preparation, statistical inference, model evaluation, governance evidence and exported artifacts are connected instead of treated as separate screens.
+
+The canonical roadmap is maintained in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+
+## Current product capabilities
 
 ### Data and preparation
 - Import CSV, TSV, delimited text, Excel, JSON, Parquet, Avro and SQLite.
 - Memory-aware loading with numeric downcasting and categorical compression; large delimited files use chunked reads.
 - Profile columns, missingness, uniqueness and numeric distribution; apply deterministic transformations with undo/redo and lineage.
 - Save and restore `.dsproj` projects, including governance configuration and quality history.
+- Portable analysis recipes can capture explicitly supported preparation operations and replay them through an allow-listed execution path.
 
 ### Statistics and finance
 - Descriptive statistics, correlations, normality tests, Welch/paired t-tests, ANOVA, chi-square and OLS.
@@ -30,7 +35,8 @@ DataSense is local-first: dataset rows stay local unless the user explicitly opt
 - Regression, classification, K-Means and PCA with worker-thread training.
 - Fixed seeds, time-aware splits, leakage warnings, baseline comparison and reproducibility metadata.
 - Prediction outputs retain row-alignment metadata so append-back operations cannot silently reorder results.
-- `.dsmodel` artifacts carry model metadata; the local Model Registry adds versioning, lifecycle state and artifact SHA-256 integrity records.
+- `.dsmodel` artifacts carry model metadata; the local Model Registry adds versioning, lifecycle state and SHA-256 artifact integrity records.
+- AutoML evaluates a bounded model family using the same explicit validation semantics instead of hiding a single arbitrary algorithm choice.
 
 ### Trust and governance
 - Local sensitive-data detection without retaining observed values.
@@ -41,7 +47,7 @@ DataSense is local-first: dataset rows stay local unless the user explicitly opt
 ### Reporting and AI
 - Styled HTML reports with governance snapshots, model evidence, application version and evidence fingerprint.
 - PDF reporting and interactive Plotly dashboards.
-- AI assistant defaults to local metadata-only answers. Remote OpenAI usage requires explicit opt-in and `OPENAI_API_KEY`; raw dataset rows are never sent implicitly.
+- AI assistant defaults to local metadata-only answers. Remote OpenAI usage requires explicit opt-in and `OPENAI_API_KEY`; raw dataset rows are not sent implicitly.
 
 ### Enterprise controls
 - Database connector defaults to read-only `SELECT`/`WITH` access and uses SQLAlchemy `URL.create` so credentials are not interpolated into connection URLs.
@@ -53,7 +59,7 @@ DataSense is local-first: dataset rows stay local unless the user explicitly opt
 ```bash
 git clone https://github.com/Ali-Marandi/DataSense.git
 cd DataSense
-python -m venv .venv && .venv\Scripts\activate
+python -m venv .venv && .venv\\Scripts\\activate
 pip install -r requirements.txt
 python main.py
 ```
