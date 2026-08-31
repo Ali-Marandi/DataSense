@@ -1,4 +1,4 @@
-"""Portable analysis recipes for repeatable DataSense workflows."""
+"""Portable, allow-listed analysis recipes for repeatable DataSense workflows."""
 from __future__ import annotations
 
 import hashlib
@@ -30,11 +30,7 @@ class AnalysisRecipe:
 
     @property
     def fingerprint(self) -> str:
-        payload = {
-            "name": self.name,
-            "steps": [step.to_dict() for step in self.steps],
-            "version": self.version,
-        }
+        payload = {"name": self.name, "steps": [step.to_dict() for step in self.steps], "version": self.version}
         return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")).hexdigest()
 
     def to_dict(self) -> dict[str, Any]:
@@ -71,3 +67,45 @@ class AnalysisRecipe:
         if not isinstance(value, dict):
             raise ValueError("Recipe root must be a JSON object.")
         return cls.from_dict(value)
+
+
+def recipe_from_history(manager, name: str, description: str = "") -> AnalysisRecipe:
+    """Create a conservative recipe from labelled mutation history.
+
+    Only operations with an explicit parameter representation should be promoted automatically;
+    free-form history labels are retained as human-readable notes rather than executable code.
+    """
+    supported = {"Dropped rows with missing values", "Dropped duplicate rows"}
+    steps: list[RecipeStep] = []
+    for item in manager.history[1:]:
+        if item.label in supported:
+            if item.label == "Dropped duplicate rows":
+                steps.append(RecipeStep("drop_duplicates"))
+            else:
+                steps.append(RecipeStep("drop_missing"))
+    return AnalysisRecipe(name=name, description=description, steps=steps)
+
+
+def execute_recipe(manager, recipe: AnalysisRecipe) -> list[str]:
+    """Execute only explicitly allow-listed DataManager operations."""
+    handlers = {
+        "drop_duplicates": lambda p: manager.drop_duplicates(p.get("subset")),
+        "drop_missing": lambda p: manager.drop_missing(p.get("columns"), p.get("how", "any")),
+        "fill_missing": lambda p: manager.fill_missing(p["column"], p.get("strategy", "mean"), p.get("value")),
+        "remove_outliers": lambda p: manager.remove_outliers(p["column"], p.get("method", "iqr"), float(p.get("threshold", 1.5))),
+        "scale_columns": lambda p: manager.scale_columns(list(p["columns"]), p.get("method", "standard")),
+        "rename_column": lambda p: manager.rename_column(p["old"], p["new"]),
+        "cast_column": lambda p: manager.cast_column(p["column"], p.get("dtype", "text")),
+    }
+    messages: list[str] = []
+    for step in recipe.steps:
+        if step.operation not in handlers:
+            raise ValueError(f"Recipe operation '{step.operation}' is not allowed.")
+        try:
+            ok, message = handlers[step.operation](step.params)
+        except KeyError as exc:
+            raise ValueError(f"Recipe operation '{step.operation}' is missing parameter '{exc.args[0]}'.") from exc
+        if not ok:
+            raise ValueError(f"Recipe step '{step.operation}' failed: {message}")
+        messages.append(message)
+    return messages
