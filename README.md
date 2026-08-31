@@ -24,7 +24,7 @@ The canonical roadmap is maintained in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 - Memory-aware loading with numeric downcasting and categorical compression; large delimited files use chunked reads.
 - Profile columns, missingness, uniqueness and numeric distribution; apply deterministic transformations with undo/redo and lineage.
 - Save and restore `.dsproj` projects, including governance configuration and quality history.
-- Portable analysis recipes can capture explicitly supported preparation operations and replay them through an allow-listed execution path.
+- Portable analysis recipes can capture explicitly supported preparation operations, fingerprint their configuration and replay them through an allow-listed execution path.
 
 ### Statistics and finance
 - Descriptive statistics, correlations, normality tests, Welch/paired t-tests, ANOVA, chi-square and OLS.
@@ -36,7 +36,7 @@ The canonical roadmap is maintained in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 - Fixed seeds, time-aware splits, leakage warnings, baseline comparison and reproducibility metadata.
 - Prediction outputs retain row-alignment metadata so append-back operations cannot silently reorder results.
 - `.dsmodel` artifacts carry model metadata; the local Model Registry adds versioning, lifecycle state and SHA-256 artifact integrity records.
-- AutoML evaluates a bounded model family using the same explicit validation semantics instead of hiding a single arbitrary algorithm choice.
+- AutoML evaluates a bounded model family using the same explicit validation semantics and presents candidate metrics plus a reproducible winner.
 
 ### Trust and governance
 - Local sensitive-data detection without retaining observed values.
@@ -50,7 +50,7 @@ The canonical roadmap is maintained in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 - AI assistant defaults to local metadata-only answers. Remote OpenAI usage requires explicit opt-in and `OPENAI_API_KEY`; raw dataset rows are not sent implicitly.
 
 ### Enterprise controls
-- Database connector defaults to read-only `SELECT`/`WITH` access and uses SQLAlchemy `URL.create` so credentials are not interpolated into connection URLs.
+- Database connector defaults to read-only `SELECT`/`WITH` access and uses SQLAlchemy URL construction so credentials are not interpolated into connection URLs.
 - Dependency/security quality gates, Windows release provenance, signed local evidence and Kubernetes baseline validation are wired into CI.
 - A bounded, thread-safe LRU cache is available for expensive analytical computations.
 
