@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-
 REGISTRY_SCHEMA = "datasense.model-registry/v1"
 
 
@@ -92,7 +91,19 @@ class ModelRegistry:
         if not matches:
             raise KeyError(f"Model {name}:{version} is not registered.")
         selected = matches[-1]
+        if not self.verify_artifact(selected):
+            raise ValueError("Artifact integrity verification failed; approval was not recorded.")
         updated = ModelRecord(**{**asdict(selected), "status": "approved"})
+        self.records = [updated if r is selected else r for r in self.records]
+        self.save()
+        return updated
+
+    def retire(self, name: str, version: str) -> ModelRecord:
+        matches = [r for r in self.records if r.name == name and r.version == version]
+        if not matches:
+            raise KeyError(f"Model {name}:{version} is not registered.")
+        selected = matches[-1]
+        updated = ModelRecord(**{**asdict(selected), "status": "retired"})
         self.records = [updated if r is selected else r for r in self.records]
         self.save()
         return updated
@@ -110,16 +121,13 @@ class ModelRegistry:
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         return digest == record.artifact_sha256
 
+    def verify_all(self) -> list[tuple[ModelRecord, bool]]:
+        return [(record, self.verify_artifact(record)) for record in self.records]
+
     def as_rows(self) -> list[dict[str, Any]]:
         return [
-            {
-                "name": r.name,
-                "version": r.version,
-                "task": r.task,
-                "target": r.target,
-                "status": r.status,
-                "dataset_fingerprint": r.dataset_fingerprint,
-                "artifact_sha256": r.artifact_sha256,
-            }
+            {"name": r.name, "version": r.version, "task": r.task, "target": r.target,
+             "status": r.status, "dataset_fingerprint": r.dataset_fingerprint,
+             "artifact_sha256": r.artifact_sha256}
             for r in self.records
         ]
