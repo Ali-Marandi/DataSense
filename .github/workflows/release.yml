@@ -8,14 +8,16 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -53,12 +55,38 @@ jobs:
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
           & $iscc /DAppVersion=$version installer/DataSense.iss
 
+      - name: Generate SHA-256 checksums
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path dist -Recurse -File | Where-Object { $_.Extension -in '.exe','.zip' }
+          $lines = foreach ($file in $files) {
+            $hash = (Get-FileHash -Algorithm SHA256 $file.FullName).Hash.ToLowerInvariant()
+            "{0}  {1}" -f $hash, $file.FullName.Substring((Resolve-Path .).Path.Length + 1)
+          }
+          $lines | Sort-Object | Set-Content -NoNewline -Encoding utf8 dist/SHA256SUMS.txt
+
+      - name: Generate artifact provenance for portable archive
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/*windows-x64-portable.zip
+
+      - name: Generate artifact provenance for standalone executable
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/*windows-x64.exe
+
+      - name: Generate artifact provenance for installer
+        uses: actions/attest@v4
+        with:
+          subject-path: installer/output/*.exe
+
       - uses: actions/upload-artifact@v4
         with:
           name: DataSense-windows
           path: |
             dist/*.zip
             dist/*.exe
+            dist/SHA256SUMS.txt
             installer/output/*.exe
 
       - name: Publish GitHub release
@@ -71,4 +99,5 @@ jobs:
           files: |
             dist/*.zip
             dist/DataSense-*-windows-x64.exe
+            dist/SHA256SUMS.txt
             installer/output/*.exe

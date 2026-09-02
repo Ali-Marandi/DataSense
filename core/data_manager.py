@@ -42,7 +42,6 @@ SUPPORTED_IMPORT = {
     ".sqlite": "SQLite database",
 }
 
-# Files larger than this (bytes) are read in chunks to keep memory flat.
 LARGE_FILE_THRESHOLD = 64 * 1024 * 1024
 DEFAULT_CHUNK_ROWS = 250_000
 
@@ -87,7 +86,6 @@ class DataManager:
     schema_drift_policy: SchemaDriftPolicy = field(default_factory=SchemaDriftPolicy)
     lineage: LineageTrail = field(default_factory=LineageTrail)
 
-    # ------------------------------------------------------------- properties
     @property
     def loaded(self) -> bool:
         return self.df is not None and not self.df.empty
@@ -134,7 +132,6 @@ class DataManager:
             return 0.0
         return float(self.df.memory_usage(deep=True).sum()) / (1024 * 1024)
 
-    # ---------------------------------------------------------------- loading
     def load(self, path: str, **options: Any) -> tuple[bool, str]:
         ext = os.path.splitext(path)[1].lower()
         if ext not in SUPPORTED_IMPORT:
@@ -153,7 +150,7 @@ class DataManager:
                 df = pdx.read_avro(path)
             else:
                 df = self._read_sqlite(path, options.get("table"))
-        except Exception as exc:  # pragma: no cover - surfaced in the UI
+        except Exception as exc:
             return False, str(exc)
 
         if isinstance(df, dict):
@@ -222,7 +219,6 @@ class DataManager:
             return False, str(exc)
         return True, f"Exported {len(self.df):,} rows to {path}"
 
-    # ------------------------------------------------------------ mutations
     def set_frame(self, frame: pd.DataFrame, label: str) -> None:
         before = self.df.copy() if self.df is not None else None
         self.df = frame.reset_index(drop=True)
@@ -230,7 +226,6 @@ class DataManager:
         self.history.append(HistoryStep(label, self.df.copy()))
         self.history = self.history[-50:]
         self._redo.clear()
-        # A previous validation report no longer describes the working dataset.
         self.governance_report = None
 
     def undo(self) -> str | None:
@@ -391,7 +386,7 @@ class DataManager:
     def group_aggregate(self, by: list[str], column: str, func: str = "mean") -> tuple[bool, str]:
         try:
             df = self._require()
-            out = df.groupby(by, dropna=False)[column].agg(func).reset_index()
+            out = df.groupby(by, dropna=False, observed=False)[column].agg(func).reset_index()
             self.set_frame(out, f"Grouped by {', '.join(by)} ({func} of {column})")
             return True, f"Aggregated into {len(out):,} group(s)."
         except Exception as exc:
@@ -417,7 +412,6 @@ class DataManager:
         except Exception as exc:
             return False, str(exc)
 
-    # ---------------------------------------------------------------- profile
     def profile(self) -> pd.DataFrame:
         if not self.loaded:
             return pd.DataFrame()
@@ -486,7 +480,6 @@ class DataManager:
         except Exception as exc:
             return False, str(exc)
 
-    # -------------------------------------------------------------- governance
     def set_governance_contract(self, contract: DataContract) -> None:
         self.governance_contract = contract
         self.governance_report = None
@@ -496,7 +489,7 @@ class DataManager:
 
     def set_schema_baseline(self) -> SchemaSnapshot:
         baseline = capture_schema(self._require())
-        if baseline is None:  # defensive guard; _require already guarantees a frame
+        if baseline is None:
             raise ValueError("No dataset loaded.")
         self.schema_baseline = baseline
         return baseline
@@ -552,7 +545,6 @@ class DataManager:
             evidence_key_resolver=lambda candidate: signing_key if candidate == key_id else None,
         )
 
-    # --------------------------------------------------------------- versions
     def save_version(self, version_name: str) -> tuple[bool, str]:
         if self.df is not None:
             self.versions[version_name] = self.df.copy()

@@ -6,90 +6,63 @@
 
 <p align="center">
   <b>Advanced data analysis, modelling and visualisation studio for Windows.</b><br>
-  Import your data, clean it, test it, model it, chart it and export a report — without writing code.
-</p>
-
-<p align="center">
-  <a href="https://github.com/Ali-Marandi/DataSense/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Ali-Marandi/DataSense?color=0f9488"></a>
-  <a href="https://github.com/Ali-Marandi/DataSense/actions/workflows/release.yml"><img alt="Build" src="https://github.com/Ali-Marandi/DataSense/actions/workflows/release.yml/badge.svg"></a>
-  <img alt="Python" src="https://img.shields.io/badge/python-3.11-blue">
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
+  Import your data, clean it, test it, model it, chart it and export evidence-aware reports — without writing code.
 </p>
 
 ---
 
-## Download
+## Product direction
 
-Grab the latest Windows build from the [Releases page](https://github.com/Ali-Marandi/DataSense/releases/latest):
+DataSense is being developed as a local-first, trusted analytics workbench. The workflow is designed to make analysis repeatable and reviewable: data preparation, statistical inference, model evaluation, governance evidence and exported artifacts are connected instead of treated as separate screens.
 
-| File | Description |
-| --- | --- |
-| `DataSense-<version>-setup.exe` | Installer with Start-menu and desktop shortcuts plus an uninstaller (recommended) |
-| `DataSense-<version>-windows-x64-portable.zip` | Portable build — unzip and run `DataSense.exe` |
+The canonical roadmap is maintained in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
-Windows 10/11 64-bit. Python is **not** required — everything is bundled.
+## Current product capabilities
 
-## Feature tour
+### Data and preparation
+- Import CSV, TSV, delimited text, Excel, JSON, Parquet, Avro and SQLite.
+- Memory-aware loading with numeric downcasting and categorical compression; large delimited files use chunked reads.
+- Profile columns, missingness, uniqueness and numeric distribution; apply deterministic transformations with undo/redo and lineage.
+- Save and restore `.dsproj` projects, including governance configuration and quality history.
+- Portable analysis recipes can capture explicitly supported preparation operations, fingerprint their configuration and replay them through an allow-listed execution path.
 
-### Data workspace
-- Import **CSV, TSV, delimited text, Excel, JSON, Parquet and SQLite**.
-- KPI header: rows, columns, numeric columns, missing cells, duplicate rows, memory footprint.
-- Virtualised preview that stays responsive on large tables.
-- **Column quality profile**: dtype, non-null and missing counts, missing %, uniqueness, mean/std/min/max.
-- Export verified reports and dashboards with a portable, signed local trust receipt when governance controls pass.
-- Inline `pandas.query` filtering with a live status message.
+### Statistics and finance
+- Descriptive statistics, correlations, normality tests, Welch/paired t-tests, ANOVA, chi-square and OLS.
+- Inferential outputs include effect sizes, confidence intervals and multiple-testing controls.
+- Portfolio volatility, Sharpe/Sortino, drawdown, VaR/expected shortfall and aligned weighted portfolio returns.
 
-### Prepare workspace
-- Fill missing values (mean, median, mode, forward, backward, zero, constant) or drop incomplete rows.
-- Remove duplicates, drop or rename columns, convert to numeric / datetime / category / text.
-- Standard and min-max scaling, IQR-based outlier removal with an adjustable factor.
-- Computed columns from expressions (`revenue / units`), group-by aggregation and pivot tables.
-- Every mutation is a history step — full **undo/redo** with labelled steps.
+### Machine learning
+- Regression, classification, K-Means and PCA with worker-thread training.
+- Fixed seeds, time-aware splits, leakage warnings, baseline comparison and reproducibility metadata.
+- Prediction outputs retain row-alignment metadata so append-back operations cannot silently reorder results.
+- `.dsmodel` artifacts carry model metadata; the local Model Registry adds versioning, lifecycle state and SHA-256 artifact integrity records.
+- AutoML evaluates a bounded model family using the same explicit validation semantics and presents candidate metrics plus a reproducible winner.
 
-### Statistics workspace
-Descriptive statistics (incl. skewness, kurtosis, CV %), correlation matrices (Pearson, Spearman, Kendall),
-frequency tables, Shapiro-Wilk normality, Welch and paired t-tests, one-way ANOVA, chi-square test of
-independence and OLS regression — each with a plain-language interpretation panel.
+### Trust and governance
+- Local sensitive-data detection without retaining observed values.
+- Data contracts, schema-drift policies, quality gates, bounded quality history and signed metadata-only evidence bundles.
+- Mutations invalidate prior quality results so stale evidence cannot be reused as current validation.
+- Security operations are copy-on-write and fail closed on invalid decryption.
 
-### Visualise workspace
-Ten themed chart types — line, area, bar, horizontal bar, scatter (with fitted trend line), histogram,
-box, violin, pie and correlation heatmap — with grouping, zoom/pan toolbar and PNG/SVG/PDF export.
+### Reporting and AI
+- Styled HTML reports with governance snapshots, model evidence, application version and evidence fingerprint.
+- PDF reporting and interactive Plotly dashboards.
+- AI assistant defaults to local metadata-only answers. Remote OpenAI usage requires explicit opt-in and `OPENAI_API_KEY`; raw dataset rows are not sent implicitly.
 
-### Machine learning workspace
-- **Regression**: linear, ridge, decision tree, random forest, gradient boosting, SVR — R², RMSE, MAE and cross-validated R².
-- **Classification**: logistic regression, decision tree, random forest, gradient boosting, SVC — accuracy, weighted precision/recall/F1 and a confusion matrix.
-- **Unsupervised**: K-Means (silhouette score, inertia, centroids) and PCA (explained variance).
-- Training runs on a worker thread so the interface never freezes; predictions and clusters can be appended back to the dataset.
-
-### Trust Center
-- **Local sensitive-data scan** flags likely email, phone, IP-address and payment-card fields without storing detected values or sending the dataset anywhere.
-- **Data contracts** enforce not-null, uniqueness, numeric ranges, allowed values, regular-expression formats and data freshness with severity levels.
-- **Review-first quality controls**: recommended rules are explicit, editable and never mutate your data; every data mutation invalidates a prior quality result.
-- Export a portable **JSON audit report** and include the latest Trust Center evidence in the styled HTML analysis report.
-- Create a **verified HTML report or dashboard** only after current Trust Center gates allow it. DataSense stores a signed, metadata-only companion receipt next to the artifact for offline review; it never transmits the dataset.
-- `.dsproj` files preserve the data contract, while checks are deliberately re-run after restore to keep validation current.
-
-### Reporting and projects
-- One-click **styled HTML report** covering dataset overview, quality profile, sample rows, every analysis run in the session, the latest chart and the full processing log.
-- `.dsproj` project files store the dataset together with its processing history.
-- Export the working dataset to CSV, Excel, JSON or Parquet.
-
-### Experience
-Custom dark and light design system, keyboard shortcuts (`Ctrl+O` import, `Ctrl+Z/Y` undo/redo,
-`Ctrl+R` report, `Ctrl+T` theme, `Ctrl+1…5` workspaces), recent-file list, live status bar and a
-version-stamped executable with a native icon.
+### Enterprise controls
+- Database connector defaults to read-only `SELECT`/`WITH` access and uses SQLAlchemy URL construction so credentials are not interpolated into connection URLs.
+- Dependency/security quality gates, Windows release provenance, signed local evidence and Kubernetes baseline validation are wired into CI.
+- A bounded, thread-safe LRU cache is available for expensive analytical computations.
 
 ## Run from source
 
 ```bash
 git clone https://github.com/Ali-Marandi/DataSense.git
 cd DataSense
-python -m venv .venv && .venv\Scripts\activate   # macOS/Linux: source .venv/bin/activate
+python -m venv .venv && .venv\\Scripts\\activate
 pip install -r requirements.txt
 python main.py
 ```
-
-Use **File ▸ Load sample dataset** (`Ctrl+Shift+S`) to explore the app with a generated retail dataset.
 
 ### Tests
 
@@ -98,45 +71,6 @@ pip install -r enterprise_control_plane/requirements.txt
 pytest -q
 ```
 
-## Build the Windows executable yourself
-
-```powershell
-pip install -r requirements.txt pyinstaller
-pyinstaller --noconfirm --clean DataSense.spec
-# optional installer (requires Inno Setup 6)
-& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=1.0.0 installer\DataSense.iss
-```
-
-Pushing a `v*` tag runs the same pipeline in GitHub Actions and publishes the installer,
-portable archive and standalone executable to a GitHub release.
-
-## Architecture
-
-```text
-main.py                 Application entry point (Qt bootstrap, icon, high-DPI)
-core/
-  data_manager.py       Loading, profiling, transformations, undo/redo, export
-  statistics.py         Descriptive and inferential statistics
-  ml.py                 Regression, classification, clustering, PCA
-  report.py             Styled HTML report builder
-  project.py            .dsproj save/load (zip + parquet + governance contract)
-  governance.py         Data contracts, local PII classification and audit evidence
-  version.py            Product metadata
-ui/
-  main_window.py        Menus, toolbar, session commands, reporting
-  data_tab.py           Data workspace
-  transform_tab.py      Prepare workspace
-  analysis_tab.py       Statistics workspace
-  visualization_tab.py  Charting workspace
-  ml_tab.py             Machine learning workspace (threaded training)
-  theme.py              Dark/light design system (single Qt stylesheet)
-  widgets/              DataFrame table model, themed Matplotlib canvas
-installer/DataSense.iss Inno Setup installer definition
-DataSense.spec          PyInstaller build recipe
-```
-
-**Stack:** Python 3.11, PyQt6, pandas, NumPy, SciPy, scikit-learn, Matplotlib, PyArrow, PyInstaller, Inno Setup.
-
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT

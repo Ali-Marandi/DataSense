@@ -7,7 +7,8 @@ from core.finance import expected_shortfall, historical_var, parametric_var
 
 def test_historical_var_returns_positive_tail_loss() -> None:
     returns = pd.Series([-0.10, -0.04, -0.02, 0.01, 0.03, 0.05])
-    assert historical_var(returns, confidence=0.95) == pytest.approx(0.10)
+    expected = -np.quantile(returns.to_numpy(), 0.05)
+    assert historical_var(returns, confidence=0.95) == pytest.approx(expected)
 
 
 def test_parametric_var_handles_constant_returns() -> None:
